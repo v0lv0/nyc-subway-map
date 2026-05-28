@@ -169,9 +169,53 @@ for (a, b) in solver_edges:
     err += abs(ang - round(ang / OCT) * OCT)
 err /= len(solver_edges)
 
+# Drawn path per route follows the physical local chain (so express lines don't
+# cut straight across). `stops` stays the actual stop list (for train arc-length).
+from collections import deque
+
+adj = defaultdict(list)
+for (a, b) in solver_edges:
+    adj[a].append(b)
+    adj[b].append(a)
+
+
+def _bfs(a, b):
+    if a == b:
+        return [a]
+    prev = {a: None}
+    q = deque([a])
+    while q:
+        u = q.popleft()
+        if u == b:
+            break
+        for w in adj[u]:
+            if w not in prev:
+                prev[w] = u
+                q.append(w)
+    if b not in prev:
+        return [a, b]
+    path, u = [], b
+    while u is not None:
+        path.append(u)
+        u = prev[u]
+    return path[::-1]
+
+
+routes_out = {}
+for rid, seq in routes.items():
+    draw = [seq[0]]
+    for a, b in zip(seq, seq[1:]):
+        key = tuple(sorted((a, b)))
+        if key in edges and _geolen(key) <= 2.2 * _median:
+            draw.append(b)
+        else:
+            p = _bfs(a, b)
+            draw.extend(p[1:] if p and p[0] == draw[-1] else p)
+    routes_out[rid] = {"draw": draw, "stops": seq}
+
 out = {
     "nodes": {n: [round(pos[n][0], 2), round(pos[n][1], 2)] for n in nodes},
-    "routes": routes,
+    "routes": routes_out,
     "colors": d["route_colors"],
     "names": {n: stops[n]["name"] for n in nodes},
 }

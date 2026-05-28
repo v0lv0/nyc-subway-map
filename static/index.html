@@ -438,18 +438,20 @@ async function setupSchematic(svgId, W, H) {
   // Per-route polyline through schematic node positions, with arc-length params
   // so trains/stops ride the schematic line exactly like the geographic one.
   SCHEM.paths = {};
-  for (const [rid, seq] of Object.entries(sj.routes)) {
-    const ids = seq.filter(id => sj.nodes[id]);
-    if (ids.length < 2) continue;
-    const path = ids.map(id => sj.nodes[id]);
+  for (const [rid, r] of Object.entries(sj.routes)) {
+    const draw = r.draw.filter(id => sj.nodes[id]);   // full path (follows local chain)
+    if (draw.length < 2) continue;
+    const path = draw.map(id => sj.nodes[id]);
     const cum = [0];
     for (let i = 1; i < path.length; i++)
       cum.push(cum[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]));
     const total = cum[cum.length - 1] || 1;
     const ncum = cum.map(c => c / total);
-    const stopT = {};
-    ids.forEach((id, i) => { stopT[id] = ncum[i]; });
-    SCHEM.paths[rid] = { path, cum: ncum, stopT };
+    const idFrac = {};
+    draw.forEach((id, i) => { if (!(id in idFrac)) idFrac[id] = ncum[i]; });
+    const stopT = {}, ids = [];                        // arc-length only at real stops
+    for (const sid of r.stops) if (sid in idFrac) { stopT[sid] = idFrac[sid]; ids.push(sid); }
+    SCHEM.paths[rid] = { path, cum: ncum, stopT, ids };
   }
   SCHEM.stopOnLine = {};
   for (const [rid, rp] of Object.entries(SCHEM.paths))
@@ -509,11 +511,16 @@ async function setupSchematic(svgId, W, H) {
   const linesG = svgEl("g", {}, svg);
   for (const [rid, rp] of Object.entries(SCHEM.paths)) {
     const color = mapData.route_colors[rid] || "#888";
-    const w = TRUNK.includes(rid) ? 5 : 3.5;
+    const w = TRUNK.includes(rid) ? 6 : 4;
     const off = (ROUTE_SLOT[rid] || 0) * SCHEM.spacing;
     const pts = rp.path.map(p => SCHEM.proj(p));
     svgEl("path", { d: offsetPath(pts, off), class: "map-line", stroke: color, "stroke-width": w }, linesG);
   }
+
+  // distinct colors serving each station (for transfer markers)
+  const stColors = {};
+  for (const [rid, rp] of Object.entries(SCHEM.paths))
+    for (const id of rp.ids) (stColors[id] = stColors[id] || new Set()).add(mapData.route_colors[rid] || rid);
 
   const stopsG = svgEl("g", {}, svg);
   for (const id in SCHEM.nodeXY) {
@@ -522,8 +529,28 @@ async function setupSchematic(svgId, W, H) {
       const color = YOUR_STOP_COLORS[id] || "#fff";
       svgEl("circle", { cx: x, cy: y, r: 8, class: "your-stop", stroke: color }, stopsG);
       svgEl("circle", { cx: x, cy: y, r: 3.4, fill: color }, stopsG);
-    } else {
-      svgEl("circle", { cx: x, cy: y, r: 2.6, class: "map-stop" }, stopsG);
+    } else if (stColors[id] && stColors[id].size > 1) {        // transfer: white bullet
+      svgEl("circle", { cx: x, cy: y, r: 4.5, fill: "#fff", stroke: "#0a141f", "stroke-width": 1.5 }, stopsG);
+    } else {                                                    // regular stop: small tick-dot
+      svgEl("circle", { cx: x, cy: y, r: 2.2, fill: "#cfd8de" }, stopsG);
+    }
+  }
+
+  // Route bullets (lettered circles) at each route's two ends, MTA-style.
+  const darkText = c => ["#f6bc26", "#7c858c", "#799534"].includes((c || "").toLowerCase());
+  const label = rid => rid.endsWith("X") ? rid[0] : (["GS", "FS", "H"].includes(rid) ? "S" : rid);
+  const bulletsG = svgEl("g", {}, svg);
+  for (const [rid, rp] of Object.entries(SCHEM.paths)) {
+    if (rid.endsWith("X")) continue;                            // skip express duplicates
+    const color = mapData.route_colors[rid] || "#888";
+    for (const tid of [rp.ids[0], rp.ids[rp.ids.length - 1]]) {
+      const [x, y] = stopScreen(tid);
+      svgEl("circle", { cx: x, cy: y, r: 9, fill: color, stroke: "#0a141f", "stroke-width": 1.5 }, bulletsG);
+      const t = svgEl("text", {
+        x, y, "text-anchor": "middle", "dominant-baseline": "central",
+        "font-size": 11, "font-weight": 700, fill: darkText(color) ? "#000" : "#fff",
+      }, bulletsG);
+      t.textContent = label(rid);
     }
   }
 
