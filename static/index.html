@@ -77,8 +77,8 @@
   .your-stop { fill: none; stroke-width: 3; }
   .home-ring { fill: none; stroke: #fff; stroke-width: 1.5; opacity: 0.6; }
   .train-dot { stroke: rgba(0,0,0,0.55); stroke-width: 1; }
-  .boro-land { fill: #1b222b; stroke: #2a333d; stroke-width: 1; }
-  .boro-label { fill: #3a4854; font-weight: 700; text-anchor: middle; letter-spacing: 3px; }
+  .boro-land { fill: #0b1722; stroke: #1d2f3f; stroke-width: 1; }
+  .boro-label { fill: #5a6f7e; font-weight: 700; text-anchor: middle; letter-spacing: 3px; }
   .stop-label { fill: #eaf2f7; font-size: 18px; font-weight: 600; letter-spacing: 0.3px;
                 paint-order: stroke; stroke: #0a1826; stroke-width: 3.5px; }
 </style>
@@ -117,7 +117,8 @@ const STOP_ON_LINE = {}; // stopId -> {route, s}: where the stop sits on a drawn
 let mapData = null;
 let vehicles = [];
 const vehSeg = new Map();   // trip id -> {next, seg}: locked segment duration
-const VIEWS = [];           // each: {proj, trainsG, vehEls, boxW, boxH, trainR}
+const VIEWS = [];           // each: {trainsG, vehEls, boxW, boxH, trainR, pointFor}
+const SCHEM = {};           // schematic layout data (built in setupSchematic)
 
 function pad(n) { return String(n).padStart(2, "0"); }
 function tick() {
@@ -134,39 +135,65 @@ function svgEl(tag, attrs, parent) {
   return el;
 }
 
-function project(p, lat, lon) {
-  // Local equal-distance coords about the view center, then rotate (so Manhattan
-  // can stand vertical), then scale into the box.
+// (lat,lon) -> local coords: equal-distance about center, rotated (Manhattan
+// upright), then a piecewise-linear HORIZONTAL stretch that widens the Manhattan
+// band [L,R] by factor E and compresses the river/outer-borough bands by C.
+// Piecewise-linear keeps lines straight (only a slight kink where a line crosses
+// a band edge, e.g. a shoreline). Box scale is applied in project().
+function localXform(p, lat, lon) {
   const ex = (lon - p.cLon) * p.cosLat;
   const ny = (lat - p.cLat);
-  const rx = ex * p.cosT - ny * p.sinT;
+  let rx = ex * p.cosT - ny * p.sinT;
   const ry = ex * p.sinT + ny * p.cosT;
-  return [p.cx + rx * p.scale, p.cy - ry * p.scale];
+  if (p.E) {
+    if (rx > p.R) rx = p.mc + p.E * (p.R - p.mc) + p.C * (rx - p.R);
+    else if (rx < p.L) rx = p.mc + p.E * (p.L - p.mc) + p.C * (rx - p.L);
+    else rx = p.mc + p.E * (rx - p.mc);
+  }
+  return [rx, ry];
 }
 
-function buildProj(roi, boxW, boxH, pad, rotateDeg) {
+function project(p, lat, lon) {
+  const [lx, ly] = localXform(p, lat, lon);
+  return [p.bx + (lx - p.midX) * p.scale, p.by - (ly - p.midY) * p.scale];
+}
+
+function buildProj(roi, boxW, boxH, pad, o) {
+  o = o || {};
   const cLat = (roi.min_lat + roi.max_lat) / 2;
   const cLon = (roi.min_lon + roi.max_lon) / 2;
   const cosLat = Math.cos(cLat * Math.PI / 180);
+  const innerW = boxW - pad * 2, innerH = boxH - pad * 2;
   let latSpan = roi.max_lat - roi.min_lat;
   let lonSpan = roi.max_lon - roi.min_lon;
-  const innerW = boxW - pad * 2, innerH = boxH - pad * 2;
   const boxAspect = innerW / innerH;
-  const roiAspect = (lonSpan * cosLat) / latSpan;
-  if (roiAspect < boxAspect) lonSpan = latSpan * boxAspect / cosLat;
+  if ((lonSpan * cosLat) / latSpan < boxAspect) lonSpan = latSpan * boxAspect / cosLat;
   else latSpan = lonSpan * cosLat / boxAspect;
-  const geoW = lonSpan * cosLat, geoH = latSpan;
-  const T = (rotateDeg || 0) * Math.PI / 180;
-  const c = Math.abs(Math.cos(T)), s = Math.abs(Math.sin(T));
-  // Fit the rotated window inside the box (corners may show water).
-  const footW = (geoW / 2) * c + (geoH / 2) * s;
-  const footH = (geoW / 2) * s + (geoH / 2) * c;
-  const scale = Math.min(innerW / (2 * footW), innerH / (2 * footH));
-  return {
-    scale, cLat, cLon, cosLat,
-    cx: boxW / 2, cy: boxH / 2,
-    sinT: Math.sin(T), cosT: Math.cos(T),
-  };
+  const NLAT = cLat - latSpan / 2, XLAT = cLat + latSpan / 2;
+  const NLON = cLon - lonSpan / 2, XLON = cLon + lonSpan / 2;
+
+  const T = (o.rotate || 0) * Math.PI / 180;
+  const cosT = Math.cos(T), sinT = Math.sin(T);
+  const p = { cLat, cLon, cosLat, cosT, sinT, E: 0 };
+  if (o.stretchE) {
+    // Manhattan band edges in rotated rx (from west/east shore anchors).
+    const rxOf = (la, lo) => ((lo - cLon) * cosLat) * cosT - (la - cLat) * sinT;
+    let L = rxOf(o.wLat, o.wLon), R = rxOf(o.eLat, o.eLon);
+    if (L > R) { const t = L; L = R; R = t; }
+    p.L = L; p.R = R; p.mc = (L + R) / 2; p.E = o.stretchE; p.C = o.stretchC || 0.5;
+  }
+  // Fit the transformed window into the box by sampling a grid.
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  const N = 10;
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+    const [lx, ly] = localXform(p, NLAT + (XLAT - NLAT) * i / N, NLON + (XLON - NLON) * j / N);
+    if (lx < minX) minX = lx; if (lx > maxX) maxX = lx;
+    if (ly < minY) minY = ly; if (ly > maxY) maxY = ly;
+  }
+  p.scale = Math.min(innerW / ((maxX - minX) || 1e-9), innerH / ((maxY - minY) || 1e-9));
+  p.midX = (minX + maxX) / 2; p.midY = (minY + maxY) / 2;
+  p.bx = boxW / 2; p.by = boxH / 2;
+  return p;
 }
 
 // Build an SVG path for a projected polyline, shifted perpendicular by `off` px
@@ -224,10 +251,10 @@ function setupView(svgId, roi, boxW, boxH, opts) {
   svg.setAttribute("viewBox", `0 0 ${boxW} ${boxH}`);
   svg.setAttribute("width", boxW); svg.setAttribute("height", boxH);
   svg.innerHTML = "";
-  const proj = buildProj(roi, boxW, boxH, opts.pad ?? 22, opts.rotate || 0);
+  const proj = buildProj(roi, boxW, boxH, opts.pad ?? 22, opts);
   const cull = (x, y) => x < -30 || x > boxW + 30 || y < -30 || y > boxH + 30;
 
-  svgEl("rect", { x: 0, y: 0, width: boxW, height: boxH, fill: "#0a1826" }, svg); // water
+  svgEl("rect", { x: 0, y: 0, width: boxW, height: boxH, fill: "#173a59" }, svg); // water
 
   const landG = svgEl("g", {}, svg);
   for (const b of (mapData.boroughs || [])) {
@@ -291,7 +318,21 @@ function setupView(svgId, roi, boxW, boxH, opts) {
     }
   }
 
-  VIEWS.push({ proj, trainsG, vehEls: new Map(), boxW, boxH, trainR: opts.trainR || 5.5, lineScale: opts.lineScale || 1 });
+  const view = { trainsG, vehEls: new Map(), boxW, boxH, trainR: opts.trainR || 5.5 };
+  view.pointFor = function (v, now) {                 // geographic train placement
+    const info = trainLatLon(v, now);
+    if (!info) return null;
+    let [x, y] = project(proj, info.pt[0], info.pt[1]);
+    const slot = ROUTE_SLOT[v.route] || 0;
+    if (slot !== 0 && info.ahead) {
+      const [ax, ay] = project(proj, info.ahead[0], info.ahead[1]);
+      const tx = ax - x, ty = ay - y, len = Math.hypot(tx, ty) || 1;
+      const off = slot * 1.8 * ls;
+      x += (-ty / len) * off; y += (tx / len) * off;
+    }
+    return [x, y];
+  };
+  VIEWS.push(view);
 }
 
 // Returns the train's position on its route path plus a point just ahead (for
@@ -313,27 +354,15 @@ function animateTrains() {
   if (!mapData) return;
   const now = Date.now() / 1000;
   for (const v of vehicles) {
-    const info = trainLatLon(v, now);
-    const slot = ROUTE_SLOT[v.route] || 0;
     for (const view of VIEWS) {
       const el = view.vehEls.get(v.id);
       if (!el) continue;
-      if (!info) { el.setAttribute("opacity", "0"); continue; }
-      let [x, y] = project(view.proj, info.pt[0], info.pt[1]);
-      // Shift onto this route's color-offset line (match offsetPath spacing).
-      if (slot !== 0 && info.ahead) {
-        const [ax, ay] = project(view.proj, info.ahead[0], info.ahead[1]);
-        let tx = ax - x, ty = ay - y;
-        const len = Math.hypot(tx, ty) || 1;
-        const off = slot * 1.8 * (view.lineScale || 1);
-        x += (-ty / len) * off;
-        y += (tx / len) * off;
-      }
-      if (x < -10 || x > view.boxW + 10 || y < -10 || y > view.boxH + 10) {
+      const pt = view.pointFor(v, now);
+      if (!pt || pt[0] < -10 || pt[0] > view.boxW + 10 || pt[1] < -10 || pt[1] > view.boxH + 10) {
         el.setAttribute("opacity", "0"); continue;
       }
-      el.setAttribute("cx", x.toFixed(2));
-      el.setAttribute("cy", y.toFixed(2));
+      el.setAttribute("cx", pt[0].toFixed(2));
+      el.setAttribute("cy", pt[1].toFixed(2));
       el.setAttribute("opacity", "1");
     }
   }
@@ -401,6 +430,116 @@ function renderStations(data) {
   }).join("");
 }
 
+// --- Schematic (octolinear) big map -----------------------------------------
+async function setupSchematic(svgId, W, H) {
+  const sj = await (await fetch("/static/schematic.json")).json();
+  SCHEM.nodeXY = sj.nodes;
+  SCHEM.spacing = 3.2;
+  // Per-route polyline through schematic node positions, with arc-length params
+  // so trains/stops ride the schematic line exactly like the geographic one.
+  SCHEM.paths = {};
+  for (const [rid, seq] of Object.entries(sj.routes)) {
+    const ids = seq.filter(id => sj.nodes[id]);
+    if (ids.length < 2) continue;
+    const path = ids.map(id => sj.nodes[id]);
+    const cum = [0];
+    for (let i = 1; i < path.length; i++)
+      cum.push(cum[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]));
+    const total = cum[cum.length - 1] || 1;
+    const ncum = cum.map(c => c / total);
+    const stopT = {};
+    ids.forEach((id, i) => { stopT[id] = ncum[i]; });
+    SCHEM.paths[rid] = { path, cum: ncum, stopT };
+  }
+  SCHEM.stopOnLine = {};
+  for (const [rid, rp] of Object.entries(SCHEM.paths))
+    for (const id in rp.stopT)
+      if (!SCHEM.stopOnLine[id]) SCHEM.stopOnLine[id] = { route: rid, s: rp.stopT[id] };
+
+  // Fit node bbox into the box (y flipped: schematic y is north-up).
+  const xs = Object.values(sj.nodes).map(p => p[0]), ys = Object.values(sj.nodes).map(p => p[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const PAD = 34;
+  const sc = Math.min((W - 2 * PAD) / (maxX - minX), (H - 2 * PAD) / (maxY - minY));
+  const ox = (W - (maxX - minX) * sc) / 2, oy = (H - (maxY - minY) * sc) / 2;
+  SCHEM.proj = p => [ox + (p[0] - minX) * sc, H - (oy + (p[1] - minY) * sc)];
+
+  // station screen position, shifted onto its route's color-offset line
+  function stopScreen(id) {
+    const onL = SCHEM.stopOnLine[id];
+    if (!onL) return SCHEM.proj(SCHEM.nodeXY[id]);
+    const rp = SCHEM.paths[onL.route];
+    let [x, y] = SCHEM.proj(sampleAlong(rp, onL.s));
+    const slot = ROUTE_SLOT[onL.route] || 0;
+    if (slot) {
+      const [ax, ay] = SCHEM.proj(sampleAlong(rp, Math.min(1, onL.s + 0.004)));
+      const tx = ax - x, ty = ay - y, l = Math.hypot(tx, ty) || 1, off = slot * SCHEM.spacing;
+      x += (-ty / l) * off; y += (tx / l) * off;
+    }
+    return [x, y];
+  }
+
+  const svg = document.getElementById(svgId);
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("width", W); svg.setAttribute("height", H);
+  svg.innerHTML = "";
+  svgEl("rect", { x: 0, y: 0, width: W, height: H, fill: "#0a141f" }, svg);
+
+  const linesG = svgEl("g", {}, svg);
+  for (const [rid, rp] of Object.entries(SCHEM.paths)) {
+    const color = mapData.route_colors[rid] || "#888";
+    const w = TRUNK.includes(rid) ? 5 : 3.5;
+    const off = (ROUTE_SLOT[rid] || 0) * SCHEM.spacing;
+    const pts = rp.path.map(p => SCHEM.proj(p));
+    svgEl("path", { d: offsetPath(pts, off), class: "map-line", stroke: color, "stroke-width": w }, linesG);
+  }
+
+  const stopsG = svgEl("g", {}, svg);
+  for (const id in SCHEM.nodeXY) {
+    const [x, y] = stopScreen(id);
+    if (YOUR_STOP_IDS.includes(id)) {
+      const color = YOUR_STOP_COLORS[id] || "#fff";
+      svgEl("circle", { cx: x, cy: y, r: 8, class: "your-stop", stroke: color }, stopsG);
+      svgEl("circle", { cx: x, cy: y, r: 3.4, fill: color }, stopsG);
+    } else {
+      svgEl("circle", { cx: x, cy: y, r: 2.6, class: "map-stop" }, stopsG);
+    }
+  }
+
+  // Home: pin to the nearest station's schematic position.
+  let hb = null, hd = 1e9;
+  for (const id in SCHEM.nodeXY) {
+    const st = mapData.stopIndex[id];
+    if (!st) continue;
+    const dd = (st.lat - HOME.lat) ** 2 + (st.lon - HOME.lon) ** 2;
+    if (dd < hd) { hd = dd; hb = id; }
+  }
+  if (hb) {
+    const [hx, hy] = stopScreen(hb);
+    svgEl("circle", { cx: hx, cy: hy, r: 13, class: "home-ring" }, svg);
+  }
+
+  const trainsG = svgEl("g", {}, svg);
+  const view = { trainsG, vehEls: new Map(), boxW: W, boxH: H, trainR: 5 };
+  view.pointFor = function (v, now) {                 // schematic train placement
+    const rp = SCHEM.paths[v.route];
+    if (!rp || rp.stopT[v.next] === undefined) return null;
+    const ns = rp.stopT[v.next];
+    const ps = (v.prev != null && rp.stopT[v.prev] !== undefined) ? rp.stopT[v.prev] : ns;
+    let f = 1 - (v.next_arr - now) / (v._seg || v.seg_time || 90);
+    f = Math.max(0, Math.min(1, f));
+    const s = ps + f * (ns - ps);
+    let [x, y] = SCHEM.proj(sampleAlong(rp, s));
+    const slot = ROUTE_SLOT[v.route] || 0;
+    if (slot) {
+      const [ax, ay] = SCHEM.proj(sampleAlong(rp, Math.min(1, s + 0.004)));
+      const tx = ax - x, ty = ay - y, l = Math.hypot(tx, ty) || 1, off = slot * SCHEM.spacing;
+      x += (-ty / l) * off; y += (tx / l) * off;
+    }
+    return [x, y];
+  };
+  VIEWS.push(view);
+}
+
 async function fetchStations() {
   try { renderStations(await (await fetch("/api/stations")).json()); }
   catch(e) { document.getElementById("updated").textContent = "error"; }
@@ -428,7 +567,8 @@ async function init() {
       if (!STOP_ON_LINE[sid]) STOP_ON_LINE[sid] = { route: routeId, s: rp.stopT[sid] };
     }
   }
-  setupView("city-svg", CITY_ROI, 1120, 1080, { rotate: 29, labels: true, labelSize: 36, stopR: 2.2, yourR: 8, trainR: 5, homeR: 13 });
+  // Big map: schematic (octolinear) diagram.
+  await setupSchematic("city-svg", 1120, 1080);
   setupView("area-svg", AREA_ROI, 800, 330, { labels: false, stopLabels: true, lineScale: 1.9, stopR: 4, yourR: 12, trainR: 7, homeR: 17, pad: 20 });
   await fetchStations();
   await fetchVehicles();

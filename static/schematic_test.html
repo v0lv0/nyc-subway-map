@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>schematic test</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0a1622; }
+  svg { display:block; }
+  .ln { fill:none; stroke-linecap:round; stroke-linejoin:round; }
+  .st { fill:#e6ebee; stroke:none; }
+</style></head>
+<body><svg id="s"></svg>
+<script>
+const TRUNK = ["1","2","3","4","5","6","7","A","C","E","N","Q","R","W","L"];
+function el(t,a,p){const e=document.createElementNS("http://www.w3.org/2000/svg",t);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e;}
+async function main(){
+  const W=1200,H=1440,PAD=40;
+  const d = await (await fetch("/static/schematic.json")).json();
+  const svg=document.getElementById("s");
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`); svg.setAttribute("width",W); svg.setAttribute("height",H);
+  // fit node bbox to box
+  const xs=Object.values(d.nodes).map(p=>p[0]), ys=Object.values(d.nodes).map(p=>p[1]);
+  const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+  const sc=Math.min((W-2*PAD)/(maxX-minX),(H-2*PAD)/(maxY-minY));
+  const ox=(W-(maxX-minX)*sc)/2, oy=(H-(maxY-minY)*sc)/2;
+  // y flip (schematic y is north-up)
+  const P=id=>{const p=d.nodes[id];return [ox+(p[0]-minX)*sc, H-(oy+(p[1]-minY)*sc)];};
+  // color slot for parallel offset
+  const colors=[...new Set(Object.values(d.colors))]; const cslot={};
+  colors.forEach((c,i)=>cslot[c]=i-(colors.length-1)/2);
+  function offPath(pts,off){let s="";for(let i=0;i<pts.length;i++){let[x,y]=pts[i];if(off){const a=pts[Math.max(0,i-1)],b=pts[Math.min(pts.length-1,i+1)];let tx=b[0]-a[0],ty=b[1]-a[1];const l=Math.hypot(tx,ty)||1;x+=-ty/l*off;y+=tx/l*off;}s+=(i?" L":"M")+x.toFixed(1)+","+y.toFixed(1);}return s;}
+  el("rect",{x:0,y:0,width:W,height:H,fill:"#0a1622"},svg);
+  const SP=3.0;
+  for(const[rid,seq]of Object.entries(d.routes)){
+    const col=d.colors[rid]||"#888";
+    const w=(TRUNK.includes(rid)?6:4);
+    const off=(cslot[col]||0)*SP;
+    const pts=seq.map(P);
+    if(pts.length>1) el("path",{d:offPath(pts,off),class:"ln",stroke:col,"stroke-width":w},svg);
+  }
+  for(const id in d.nodes){const[x,y]=P(id);el("circle",{cx:x,cy:y,r:3,class:"st"},svg);}
+}
+main();
+</script></body></html>
