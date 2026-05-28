@@ -9,7 +9,7 @@ from google.transit import gtfs_realtime_pb2
 from stations import HOME, STATIONS
 
 app = Flask(__name__)
-
+app = Flask(__name__, static_folder="static", static_url_path="/static")
 FEEDS = {
     "ace": "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-ace",
     "bdfm": "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-bdfm",
@@ -18,7 +18,6 @@ FEEDS = {
     "nqrw": "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-nqrw",
     "l": "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-l",
     "1234567": "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs",
-    "si": "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-si",
 }
 
 cache = {"trains": [], "updated": None}

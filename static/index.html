@@ -2,213 +2,242 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=1080">
 <title>NYC Subway</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-
   body {
-    background: #0a0a0a;
-    color: #fff;
+    background: #0a0a0a; color: #fff;
     font-family: 'Helvetica Neue', Arial, sans-serif;
-    min-height: 100vh;
-    padding: 2rem;
+    width: 1080px; height: 1920px;
+    overflow: hidden; display: flex; flex-direction: column;
   }
-
   header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 2rem;
-    border-bottom: 1px solid #222;
-    padding-bottom: 1rem;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 32px 56px 24px; border-bottom: 1px solid #1a1a1a; flex-shrink: 0;
   }
-
-  header h1 { font-size: 1.1rem; font-weight: 400; color: #888; }
-  header #clock { font-size: 2rem; font-weight: 300; letter-spacing: 2px; }
-  header #updated { font-size: 0.75rem; color: #444; }
-
-  .stations { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; }
-
+  #address { font-size: 1.1rem; color: #444; }
+  #clock { font-size: 3.5rem; font-weight: 200; letter-spacing: 6px; }
+  #updated { font-size: 0.75rem; color: #2a2a2a; text-align: right; }
+  #map-container { position: relative; overflow: hidden; flex-shrink: 0; }
+  #map-svg { display: block; }
+  .stations-panel {
+    flex: 1; padding: 20px 48px; display: flex; flex-direction: column;
+    gap: 14px; overflow: hidden; border-top: 1px solid #1a1a1a;
+  }
   .station {
-    background: #111;
-    border-radius: 12px;
-    padding: 1.25rem;
-    border: 1px solid #1e1e1e;
+    background: #111; border-radius: 14px; padding: 16px 22px;
+    border: 1px solid #1a1a1a; display: flex; gap: 20px; align-items: center;
   }
-
-  .station-header {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-  }
-
-  .station-name { font-size: 1.1rem; font-weight: 500; }
-  .walk { font-size: 0.8rem; color: #555; margin-left: auto; }
-
+  .station-left { flex-shrink: 0; width: 165px; }
+  .station-name { font-size: 1.1rem; font-weight: 500; margin-bottom: 5px; }
+  .station-meta { font-size: 0.78rem; color: #444; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .line-badge {
-    width: 28px; height: 28px;
-    border-radius: 50%;
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: 0.8rem; font-weight: 700;
-    flex-shrink: 0;
+    border-radius: 50%; display: inline-flex; align-items: center;
+    justify-content: center; font-weight: 700; flex-shrink: 0;
   }
-
-  /* MTA line colors */
   .line-L { background: #a7a9ac; color: #000; }
   .line-G { background: #6cbe45; color: #000; }
   .line-J, .line-Z { background: #996633; color: #fff; }
   .line-M { background: #ff6319; color: #fff; }
   .line-A, .line-C, .line-E { background: #0039a6; color: #fff; }
-  .line-B, .line-D, .line-F, .line-V { background: #ff6319; color: #fff; }
+  .line-B, .line-D, .line-F { background: #ff6319; color: #fff; }
   .line-N, .line-Q, .line-R, .line-W { background: #fccc0a; color: #000; }
   .line-1, .line-2, .line-3 { background: #ee352e; color: #fff; }
   .line-4, .line-5, .line-6 { background: #00933c; color: #fff; }
   .line-7 { background: #b933ad; color: #fff; }
-
-  .arrivals { display: flex; flex-direction: column; gap: 0.5rem; }
-
-  .arrival {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: 8px;
-    background: #0d0d0d;
-    transition: background 0.3s;
+  .arrivals-row { flex: 1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .arrival-chip {
+    display: flex; align-items: center; gap: 7px; padding: 7px 11px;
+    border-radius: 10px; background: #0d0d0d; border: 1px solid #1a1a1a;
   }
-
-  .arrival.urgent { background: #1a1200; border: 1px solid #554400; }
-  .arrival.leave-now { background: #0f1a0f; border: 1px solid #2a5a2a; }
-
-  .arrival-route { flex-shrink: 0; }
-  .arrival-dir { font-size: 0.75rem; color: #555; flex: 1; }
-
-  .arrival-time {
-    font-size: 1.4rem;
-    font-weight: 300;
-    min-width: 60px;
-    text-align: right;
-  }
-
-  .arrival-time .unit { font-size: 0.7rem; color: #555; margin-left: 2px; }
-
-  .leave-indicator {
-    font-size: 0.65rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: #2a5a2a;
-    color: #6cbe45;
-    white-space: nowrap;
-  }
-
-  .urgent .leave-indicator {
-    background: #554400;
-    color: #fccc0a;
-  }
-
-  .no-arrivals { color: #333; font-size: 0.85rem; padding: 0.5rem 0; }
-
-  footer {
-    margin-top: 2rem;
-    text-align: center;
-    font-size: 0.7rem;
-    color: #2a2a2a;
-  }
+  .arrival-chip.gone      { opacity: 0.25; }
+  .arrival-chip.catchable { border-color: #1e3a1e; }
+  .arrival-chip.urgent    { border-color: #4a3a00; background: #0f0c00; }
+  .chip-dir { font-size: 0.7rem; color: #444; line-height: 1.2; max-width: 58px; }
+  .chip-time { font-size: 1.5rem; font-weight: 200; line-height: 1; min-width: 40px; text-align: right; }
+  .chip-time .unit { font-size: 0.6rem; color: #444; }
+  .chip-pill { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.06em; padding: 2px 5px; border-radius: 3px; white-space: nowrap; }
+  .pill-gone      { background: #1a1a1a; color: #333; }
+  .pill-leave     { background: #4a3a00; color: #fccc0a; }
+  .pill-catchable { background: #1a3a1a; color: #6cbe45; }
+  .map-line  { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .map-stop  { fill: #111; stroke: #2a2a2a; stroke-width: 1; }
+  .your-stop { fill: none; stroke-width: 2.5; }
+  .home-ring { fill: none; stroke: #fff; stroke-width: 1.5; opacity: 0.5; }
+  .train-dot { stroke: rgba(0,0,0,0.6); stroke-width: 1; }
+  footer { text-align: center; font-size: 0.65rem; color: #1a1a1a; padding: 8px; flex-shrink: 0; }
 </style>
 </head>
 <body>
-
 <header>
-  <h1>114 Leonard St</h1>
-  <div id="clock">--:--</div>
-  <div id="updated">loading...</div>
+  <div id="address">114 Leonard St, Brooklyn</div>
+  <div id="clock">--:--:--</div>
+  <div id="updated">--</div>
 </header>
-
-<div class="stations" id="stations">
-  <div style="color:#333">Loading...</div>
+<div id="map-container">
+  <svg id="map-svg"></svg>
 </div>
-
-<footer>nyc-subway-map · updates every 30s</footer>
+<div class="stations-panel" id="stations-panel">
+  <div style="color:#222">loading...</div>
+</div>
+<footer>nyc-subway-map · 30s refresh</footer>
 
 <script>
-const API = '/api/stations';
+const HOME = { lat: 40.7142, lon: -73.9444 };
+const YOUR_STOP_IDS = ["L17", "G26", "J28", "L16"];
+const YOUR_STOP_COLORS = { "L17": "#a7a9ac", "G26": "#6cbe45", "J28": "#996633", "L16": "#a7a9ac" };
 
-function pad(n) { return String(n).padStart(2, '0'); }
+let mapData = null;
+let mapW = 0, mapH = 0, mapPad = 32;
 
+function pad(n) { return String(n).padStart(2, "0"); }
 function tick() {
-  const now = new Date();
-  document.getElementById('clock').textContent =
-    pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+  const d = new Date();
+  document.getElementById("clock").textContent =
+    pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
 }
-
 setInterval(tick, 1000);
 tick();
 
-function lineBadge(route) {
-  return `<span class="line-badge line-${route}">${route}</span>`;
+function project(lat, lon) {
+  const b = mapData.bounds;
+  const x = mapPad + (lon - b.min_lon) / (b.max_lon - b.min_lon) * mapW;
+  const y = mapPad + (1 - (lat - b.min_lat) / (b.max_lat - b.min_lat)) * mapH;
+  return [x, y];
 }
 
-function render(data) {
-  const now = new Date();
-  document.getElementById('updated').textContent =
-    'updated ' + new Date(data.updated).toLocaleTimeString();
-
-  const container = document.getElementById('stations');
-  container.innerHTML = data.stations.map(station => {
-    const badges = station.lines.map(lineBadge).join('');
-
-    const arrivals = station.arrivals.length === 0
-      ? '<div class="no-arrivals">no upcoming arrivals</div>'
-      : station.arrivals.map(a => {
-          const catchable = a.arrives_in_min >= station.walk_min;
-          const tight = a.arrives_in_min <= station.walk_min + 1 && catchable;
-          const cls = tight ? 'arrival urgent' : catchable ? 'arrival leave-now' : 'arrival';
-          const indicator = tight
-            ? '<span class="leave-indicator">LEAVE NOW</span>'
-            : catchable
-            ? '<span class="leave-indicator" style="background:#1a2a1a;color:#4a8a4a">catchable</span>'
-            : '';
-          const timeDisplay = a.arrives_in_min === 0
-            ? '<span class="arrival-time">now</span>'
-            : `<span class="arrival-time">${a.arrives_in_min}<span class="unit">min</span></span>`;
-
-          return `
-            <div class="${cls}">
-              <div class="arrival-route">${lineBadge(a.route)}</div>
-              <div class="arrival-dir">${a.direction}</div>
-              ${indicator}
-              ${timeDisplay}
-            </div>`;
-        }).join('');
-
-    return `
-      <div class="station">
-        <div class="station-header">
-          ${badges}
-          <span class="station-name">${station.name}</span>
-          <span class="walk">${station.walk_min} min walk</span>
-        </div>
-        <div class="arrivals">${arrivals}</div>
-      </div>`;
-  }).join('');
+function svgEl(tag, attrs, parent) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  if (parent) parent.appendChild(el);
+  return el;
 }
 
-async function fetchAndRender() {
-  try {
-    const res = await fetch(API);
-    const data = await res.json();
-    render(data);
-  } catch(e) {
-    document.getElementById('updated').textContent = 'error fetching data';
+function drawMap(data) {
+  const b = data.bounds;
+  const latRange = b.max_lat - b.min_lat;
+  const lonRange = b.max_lon - b.min_lon;
+  mapW = 1080 - mapPad * 2;
+  mapH = Math.round(mapW * (latRange / lonRange) * 1.4);
+
+  const svg = document.getElementById("map-svg");
+  const totalH = mapH + mapPad * 2;
+  svg.setAttribute("viewBox", `0 0 1080 ${totalH}`);
+  svg.setAttribute("width", "1080");
+  svg.setAttribute("height", totalH);
+  document.getElementById("map-container").style.height = totalH + "px";
+  svg.innerHTML = "";
+
+  const linesG  = svgEl("g", { id: "lines"  }, svg);
+  const stopsG  = svgEl("g", { id: "stops"  }, svg);
+  const yoursG  = svgEl("g", { id: "yours"  }, svg);
+  const homeG   = svgEl("g", { id: "home"   }, svg);
+  const trainsG = svgEl("g", { id: "trains" }, svg);
+
+  for (const [routeId, shapeList] of Object.entries(data.route_shapes)) {
+    const color = data.route_colors[routeId] || "#444";
+    const w = ["1","2","3","4","5","6","7","A","C","E","N","Q","R","W","L"].includes(routeId) ? 3.5 : 2.5;
+    for (const shape of shapeList) {
+      if (shape.length < 2) continue;
+      const d = shape.map(([lat, lon], i) => {
+        const [x, y] = project(lat, lon);
+        return (i === 0 ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1);
+      }).join(" ");
+      svgEl("path", { d, class: "map-line", stroke: color, "stroke-width": w }, linesG);
+    }
+  }
+
+  for (const stop of data.stops) {
+    const [x, y] = project(stop.lat, stop.lon);
+    const isYours = YOUR_STOP_IDS.some(id => stop.id.startsWith(id));
+    if (isYours) {
+      const color = Object.entries(YOUR_STOP_COLORS).find(([id]) => stop.id.startsWith(id))?.[1] || "#fff";
+      svgEl("circle", { cx: x, cy: y, r: 8, class: "your-stop", stroke: color }, yoursG);
+      svgEl("circle", { cx: x, cy: y, r: 3.5, fill: color }, yoursG);
+    } else {
+      svgEl("circle", { cx: x, cy: y, r: 2, class: "map-stop" }, stopsG);
+    }
+  }
+
+  const [hx, hy] = project(HOME.lat, HOME.lon);
+  svgEl("circle", { cx: hx, cy: hy, r: 14, class: "home-ring" }, homeG);
+  svgEl("circle", { cx: hx, cy: hy, r: 5,  fill: "#fff" }, homeG);
+}
+
+function drawTrains(trains) {
+  const trainsG = document.getElementById("trains");
+  if (!trainsG || !mapData) return;
+  trainsG.innerHTML = "";
+  const now = Date.now() / 1000;
+  const seen = new Set();
+  for (const t of trains) {
+    const wait = t.arrival - now;
+    if (wait < 0 || wait > 600) continue;
+    const key = t.stop_id + ":" + t.route;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const stop = mapData.stops.find(s => s.id === t.stop_id);
+    if (!stop) continue;
+    const [x, y] = project(stop.lat, stop.lon);
+    const color = mapData.route_colors[t.route] || "#888";
+    svgEl("circle", { cx: x, cy: y, r: 6, fill: color, class: "train-dot" }, trainsG);
   }
 }
 
-fetchAndRender();
-setInterval(fetchAndRender, 30000);
+function badge(route, size) {
+  return `<span class="line-badge line-${route}" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.55)}px">${route}</span>`;
+}
+
+function renderStations(data) {
+  document.getElementById("updated").textContent =
+    "updated " + new Date(data.updated).toLocaleTimeString();
+  document.getElementById("stations-panel").innerHTML = data.stations.map(s => {
+    const chips = s.arrivals.map(a => {
+      const gone    = a.arrives_in_min < s.walk_min;
+      const urgent  = !gone && a.arrives_in_min <= s.walk_min + 2;
+      const cls     = gone ? "arrival-chip gone" : urgent ? "arrival-chip urgent" : "arrival-chip catchable";
+      const pill    = gone
+        ? '<span class="chip-pill pill-gone">gone</span>'
+        : urgent
+        ? '<span class="chip-pill pill-leave">NOW</span>'
+        : '<span class="chip-pill pill-catchable">ok</span>';
+      const time = a.arrives_in_min <= 0
+        ? `<span class="chip-time" style="font-size:0.85rem;color:#555">arr</span>`
+        : `<span class="chip-time">${a.arrives_in_min}<span class="unit">m</span></span>`;
+      return `<div class="${cls}">${badge(a.route,26)}<span class="chip-dir">${a.direction}</span>${pill}${time}</div>`;
+    }).join("");
+    return `<div class="station">
+      <div class="station-left">
+        <div class="station-meta">${s.lines.map(l => badge(l,28)).join("")}</div>
+        <div class="station-name">${s.name}</div>
+        <div class="station-meta">${s.walk_min} min walk</div>
+      </div>
+      <div class="arrivals-row">${chips || '<span style="color:#2a2a2a;font-size:0.85rem">no arrivals</span>'}</div>
+    </div>`;
+  }).join("");
+}
+
+async function fetchStations() {
+  try { renderStations(await (await fetch("/api/stations")).json()); }
+  catch(e) { document.getElementById("updated").textContent = "error"; }
+}
+
+async function fetchTrains() {
+  try { drawTrains((await (await fetch("/api/trains")).json()).trains); }
+  catch(e) {}
+}
+
+async function init() {
+  mapData = await (await fetch("/static/map_data.json")).json();
+  drawMap(mapData);
+  await fetchStations();
+  await fetchTrains();
+}
+
+init();
+setInterval(fetchStations, 30000);
+setInterval(fetchTrains, 30000);
 </script>
 </body>
 </html>
