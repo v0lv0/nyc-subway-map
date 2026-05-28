@@ -110,7 +110,7 @@ for n, p in pinned.items():
 ITERS = 220
 ANCHOR = 0.05    # weak pull to true geography (keeps shape/orientation)
 MIN_EDGE = 18.0  # target edge length -> even spacing, spreads dense areas
-SEP = 17.0       # min separation; repulsion spreads parallel trunks into columns
+SEP = 17.0       # min separation; light repulsion without hurting octolinearity
 REP = 0.5        # repulsion strength
 OCT = math.pi / 4
 

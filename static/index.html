@@ -484,6 +484,28 @@ async function setupSchematic(svgId, W, H) {
   svg.innerHTML = "";
   svgEl("rect", { x: 0, y: 0, width: W, height: H, fill: "#0a141f" }, svg);
 
+  // Large faint borough labels behind the lines (centroid of each borough's
+  // stations in schematic space).
+  const BORO = {
+    "THE BRONX": [40.785, 41.0, -73.94, -73.74],
+    "MANHATTAN": [40.70, 40.88, -74.03, -73.927],
+    "QUEENS": [40.66, 40.80, -73.926, -73.70],
+    "BROOKLYN": [40.56, 40.74, -74.05, -73.855],
+  };
+  for (const [name, [la0, la1, lo0, lo1]] of Object.entries(BORO)) {
+    let sx = 0, sy = 0, c = 0;
+    for (const id in SCHEM.nodeXY) {
+      const st = mapData.stopIndex[id];
+      if (!st || st.lat < la0 || st.lat > la1 || st.lon < lo0 || st.lon > lo1) continue;
+      const [x, y] = SCHEM.proj(SCHEM.nodeXY[id]);
+      sx += x; sy += y; c++;
+    }
+    if (c) {
+      const t = svgEl("text", { x: sx / c, y: sy / c, class: "boro-label", "font-size": 30 }, svg);
+      t.textContent = name;
+    }
+  }
+
   const linesG = svgEl("g", {}, svg);
   for (const [rid, rp] of Object.entries(SCHEM.paths)) {
     const color = mapData.route_colors[rid] || "#888";
