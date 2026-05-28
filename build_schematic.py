@@ -77,7 +77,7 @@ AVENUES = [                       # (routes, column index west->east)
     (["N", "Q", "R", "W"], 1.0),  # Broadway
     (["4", "5", "6"], 2.0),       # Lexington Av
 ]
-COL = 30.0  # horizontal spacing between avenue columns
+COL = 42.0  # horizontal spacing between avenue columns
 
 
 def _in_manhattan(n):

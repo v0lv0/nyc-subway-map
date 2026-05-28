@@ -434,7 +434,7 @@ function renderStations(data) {
 async function setupSchematic(svgId, W, H) {
   const sj = await (await fetch("/static/schematic.json")).json();
   SCHEM.nodeXY = sj.nodes;
-  SCHEM.spacing = 3.2;
+  SCHEM.spacing = 5.5;   // per-color offset; >= line width so colors sit side by side
   // Per-route polyline through schematic node positions, with arc-length params
   // so trains/stops ride the schematic line exactly like the geographic one.
   SCHEM.paths = {};
@@ -462,7 +462,8 @@ async function setupSchematic(svgId, W, H) {
   const xs = Object.values(sj.nodes).map(p => p[0]), ys = Object.values(sj.nodes).map(p => p[1]);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   const PAD = 34;
-  const sc = Math.min((W - 2 * PAD) / (maxX - minX), (H - 2 * PAD) / (maxY - minY));
+  const _PAD = 24;
+  const sc = Math.min((W - 2 * _PAD) / (maxX - minX), (H - 2 * _PAD) / (maxY - minY));
   const ox = (W - (maxX - minX) * sc) / 2, oy = (H - (maxY - minY) * sc) / 2;
   SCHEM.proj = p => [ox + (p[0] - minX) * sc, H - (oy + (p[1] - minY) * sc)];
 
@@ -511,7 +512,7 @@ async function setupSchematic(svgId, W, H) {
   const linesG = svgEl("g", {}, svg);
   for (const [rid, rp] of Object.entries(SCHEM.paths)) {
     const color = mapData.route_colors[rid] || "#888";
-    const w = TRUNK.includes(rid) ? 6 : 4;
+    const w = TRUNK.includes(rid) ? 5 : 3.8;
     const off = (ROUTE_SLOT[rid] || 0) * SCHEM.spacing;
     const pts = rp.path.map(p => SCHEM.proj(p));
     svgEl("path", { d: offsetPath(pts, off), class: "map-line", stroke: color, "stroke-width": w }, linesG);
