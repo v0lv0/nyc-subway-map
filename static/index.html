@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NYC Subway</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0a0a0a;
+    color: #fff;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    min-height: 100vh;
+    padding: 2rem;
+  }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid #222;
+    padding-bottom: 1rem;
+  }
+
+  header h1 { font-size: 1.1rem; font-weight: 400; color: #888; }
+  header #clock { font-size: 2rem; font-weight: 300; letter-spacing: 2px; }
+  header #updated { font-size: 0.75rem; color: #444; }
+
+  .stations { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; }
+
+  .station {
+    background: #111;
+    border-radius: 12px;
+    padding: 1.25rem;
+    border: 1px solid #1e1e1e;
+  }
+
+  .station-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .station-name { font-size: 1.1rem; font-weight: 500; }
+  .walk { font-size: 0.8rem; color: #555; margin-left: auto; }
+
+  .line-badge {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.8rem; font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  /* MTA line colors */
+  .line-L { background: #a7a9ac; color: #000; }
+  .line-G { background: #6cbe45; color: #000; }
+  .line-J, .line-Z { background: #996633; color: #fff; }
+  .line-M { background: #ff6319; color: #fff; }
+  .line-A, .line-C, .line-E { background: #0039a6; color: #fff; }
+  .line-B, .line-D, .line-F, .line-V { background: #ff6319; color: #fff; }
+  .line-N, .line-Q, .line-R, .line-W { background: #fccc0a; color: #000; }
+  .line-1, .line-2, .line-3 { background: #ee352e; color: #fff; }
+  .line-4, .line-5, .line-6 { background: #00933c; color: #fff; }
+  .line-7 { background: #b933ad; color: #fff; }
+
+  .arrivals { display: flex; flex-direction: column; gap: 0.5rem; }
+
+  .arrival {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    background: #0d0d0d;
+    transition: background 0.3s;
+  }
+
+  .arrival.urgent { background: #1a1200; border: 1px solid #554400; }
+  .arrival.leave-now { background: #0f1a0f; border: 1px solid #2a5a2a; }
+
+  .arrival-route { flex-shrink: 0; }
+  .arrival-dir { font-size: 0.75rem; color: #555; flex: 1; }
+
+  .arrival-time {
+    font-size: 1.4rem;
+    font-weight: 300;
+    min-width: 60px;
+    text-align: right;
+  }
+
+  .arrival-time .unit { font-size: 0.7rem; color: #555; margin-left: 2px; }
+
+  .leave-indicator {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #2a5a2a;
+    color: #6cbe45;
+    white-space: nowrap;
+  }
+
+  .urgent .leave-indicator {
+    background: #554400;
+    color: #fccc0a;
+  }
+
+  .no-arrivals { color: #333; font-size: 0.85rem; padding: 0.5rem 0; }
+
+  footer {
+    margin-top: 2rem;
+    text-align: center;
+    font-size: 0.7rem;
+    color: #2a2a2a;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>114 Leonard St</h1>
+  <div id="clock">--:--</div>
+  <div id="updated">loading...</div>
+</header>
+
+<div class="stations" id="stations">
+  <div style="color:#333">Loading...</div>
+</div>
+
+<footer>nyc-subway-map · updates every 30s</footer>
+
+<script>
+const API = '/api/stations';
+
+function pad(n) { return String(n).padStart(2, '0'); }
+
+function tick() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+}
+
+setInterval(tick, 1000);
+tick();
+
+function lineBadge(route) {
+  return `<span class="line-badge line-${route}">${route}</span>`;
+}
+
+function render(data) {
+  const now = new Date();
+  document.getElementById('updated').textContent =
+    'updated ' + new Date(data.updated).toLocaleTimeString();
+
+  const container = document.getElementById('stations');
+  container.innerHTML = data.stations.map(station => {
+    const badges = station.lines.map(lineBadge).join('');
+
+    const arrivals = station.arrivals.length === 0
+      ? '<div class="no-arrivals">no upcoming arrivals</div>'
+      : station.arrivals.map(a => {
+          const catchable = a.arrives_in_min >= station.walk_min;
+          const tight = a.arrives_in_min <= station.walk_min + 1 && catchable;
+          const cls = tight ? 'arrival urgent' : catchable ? 'arrival leave-now' : 'arrival';
+          const indicator = tight
+            ? '<span class="leave-indicator">LEAVE NOW</span>'
+            : catchable
+            ? '<span class="leave-indicator" style="background:#1a2a1a;color:#4a8a4a">catchable</span>'
+            : '';
+          const timeDisplay = a.arrives_in_min === 0
+            ? '<span class="arrival-time">now</span>'
+            : `<span class="arrival-time">${a.arrives_in_min}<span class="unit">min</span></span>`;
+
+          return `
+            <div class="${cls}">
+              <div class="arrival-route">${lineBadge(a.route)}</div>
+              <div class="arrival-dir">${a.direction}</div>
+              ${indicator}
+              ${timeDisplay}
+            </div>`;
+        }).join('');
+
+    return `
+      <div class="station">
+        <div class="station-header">
+          ${badges}
+          <span class="station-name">${station.name}</span>
+          <span class="walk">${station.walk_min} min walk</span>
+        </div>
+        <div class="arrivals">${arrivals}</div>
+      </div>`;
+  }).join('');
+}
+
+async function fetchAndRender() {
+  try {
+    const res = await fetch(API);
+    const data = await res.json();
+    render(data);
+  } catch(e) {
+    document.getElementById('updated').textContent = 'error fetching data';
+  }
+}
+
+fetchAndRender();
+setInterval(fetchAndRender, 30000);
+</script>
+</body>
+</html>

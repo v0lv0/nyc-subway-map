@@ -3,7 +3,7 @@ import time as time_module
 from datetime import datetime, timezone
 
 import requests
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from google.transit import gtfs_realtime_pb2
 
 from stations import HOME, STATIONS
@@ -133,6 +133,11 @@ def get_stations():
             }
         )
     return jsonify({"home": HOME, "stations": result, "updated": cache["updated"]})
+
+
+@app.route("/")
+def index():
+    return send_from_directory("static", "index.html")
 
 
 if __name__ == "__main__":
