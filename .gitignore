@@ -3,3 +3,6 @@ __pycache__/
 .env
 venv/
 node_modules/
+
+# Raw GTFS + geojson inputs (large, regenerable; build_map_data.py consumes these)
+data/

@@ -2,94 +2,122 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=1080">
+<meta name="viewport" content="width=1920">
 <title>NYC Subway</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    background: #0a0a0a; color: #fff;
+    background: #0a1826; color: #fff;
     font-family: 'Helvetica Neue', Arial, sans-serif;
-    width: 1080px; height: 1920px;
-    overflow: hidden; display: flex; flex-direction: column;
+    width: 1920px; height: 1080px;
+    overflow: hidden; display: flex; flex-direction: row;
   }
-  header {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 32px 56px 24px; border-bottom: 1px solid #1a1a1a; flex-shrink: 0;
-  }
-  #address { font-size: 1.1rem; color: #444; }
-  #clock { font-size: 3.5rem; font-weight: 200; letter-spacing: 6px; }
-  #updated { font-size: 0.75rem; color: #2a2a2a; text-align: right; }
-  #map-container { position: relative; overflow: hidden; flex-shrink: 0; }
-  #map-svg { display: block; }
-  .stations-panel {
-    flex: 1; padding: 20px 48px; display: flex; flex-direction: column;
-    gap: 14px; overflow: hidden; border-top: 1px solid #1a1a1a;
-  }
+  /* One continuous dark surface; thin subtle dividers between the 3 panes */
+  #left { width: 1120px; height: 1080px; position: relative; }
+  #right { width: 800px; height: 1080px; display: flex; flex-direction: column;
+           border-left: 1px solid #1b2c38; }
+  #area-wrap { height: 330px; position: relative; border-bottom: 1px solid #1b2c38; }
+  #bottom { flex: 1; display: flex; flex-direction: column; padding: 22px 30px; overflow: hidden; }
+
+  .map-label { position: absolute; top: 16px; left: 22px; font-size: 0.78rem;
+               color: #3d5260; letter-spacing: 3px; text-transform: uppercase; z-index: 2; }
+  svg { display: block; }
+
+  /* Clock overlaid on the top-left of the big map */
+  #clock { position: absolute; top: 26px; left: 28px; z-index: 2;
+           font-size: 4.4rem; font-weight: 200; letter-spacing: 6px; line-height: 1;
+           color: #eaf2f7; text-shadow: 0 2px 14px #000; }
+  #clock-date { position: absolute; top: 108px; left: 30px; z-index: 2;
+                font-size: 0.95rem; color: #5a6b76; letter-spacing: 2px; }
+  #bottom-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+  #address { font-size: 1.05rem; color: #6a7b86; }
+  #updated { font-size: 0.74rem; color: #34454f; }
+
+  .stations-panel { flex: 1; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
   .station {
-    background: #111; border-radius: 14px; padding: 16px 22px;
-    border: 1px solid #1a1a1a; display: flex; gap: 20px; align-items: center;
+    background: #0e1c26; border-radius: 12px; padding: 10px 16px;
+    border: 1px solid #1b2c38; display: flex; gap: 18px; align-items: center;
+    flex: 1; min-height: 0;
   }
-  .station-left { flex-shrink: 0; width: 165px; }
-  .station-name { font-size: 1.1rem; font-weight: 500; margin-bottom: 5px; }
-  .station-meta { font-size: 0.78rem; color: #444; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  .line-badge {
-    border-radius: 50%; display: inline-flex; align-items: center;
-    justify-content: center; font-weight: 700; flex-shrink: 0;
-  }
-  .line-L { background: #a7a9ac; color: #000; }
-  .line-G { background: #6cbe45; color: #000; }
-  .line-J, .line-Z { background: #996633; color: #fff; }
-  .line-M { background: #ff6319; color: #fff; }
-  .line-A, .line-C, .line-E { background: #0039a6; color: #fff; }
-  .line-B, .line-D, .line-F { background: #ff6319; color: #fff; }
-  .line-N, .line-Q, .line-R, .line-W { background: #fccc0a; color: #000; }
-  .line-1, .line-2, .line-3 { background: #ee352e; color: #fff; }
-  .line-4, .line-5, .line-6 { background: #00933c; color: #fff; }
-  .line-7 { background: #b933ad; color: #fff; }
+  .station-left { flex-shrink: 0; width: 150px; }
+  .station-name { font-size: 1rem; font-weight: 500; margin-bottom: 4px; }
+  .station-meta { font-size: 0.74rem; color: #444; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .line-badge { border-radius: 50%; display: inline-flex; align-items: center;
+                justify-content: center; font-weight: 700; flex-shrink: 0; }
+  .line-L { background: #7c858c; color: #000; }
+  .line-G { background: #799534; color: #fff; }
+  .line-J, .line-Z { background: #8e5c33; color: #fff; }
+  .line-M { background: #eb6800; color: #fff; }
+  .line-A, .line-C, .line-E { background: #0062cf; color: #fff; }
+  .line-B, .line-D, .line-F { background: #eb6800; color: #fff; }
+  .line-N, .line-Q, .line-R, .line-W { background: #f6bc26; color: #000; }
+  .line-1, .line-2, .line-3 { background: #d82233; color: #fff; }
+  .line-4, .line-5, .line-6 { background: #009952; color: #fff; }
+  .line-7 { background: #9a38a1; color: #fff; }
   .arrivals-row { flex: 1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .arrival-chip {
-    display: flex; align-items: center; gap: 7px; padding: 7px 11px;
-    border-radius: 10px; background: #0d0d0d; border: 1px solid #1a1a1a;
-  }
+  .arrival-chip { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+                  padding: 8px 12px; border-radius: 9px; background: #0a141b; border: 1px solid #1b2c38;
+                  width: 150px; }
   .arrival-chip.gone      { opacity: 0.25; }
   .arrival-chip.catchable { border-color: #1e3a1e; }
   .arrival-chip.urgent    { border-color: #4a3a00; background: #0f0c00; }
-  .chip-dir { font-size: 0.7rem; color: #444; line-height: 1.2; max-width: 58px; }
-  .chip-time { font-size: 1.5rem; font-weight: 200; line-height: 1; min-width: 40px; text-align: right; }
-  .chip-time .unit { font-size: 0.6rem; color: #444; }
-  .chip-pill { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.06em; padding: 2px 5px; border-radius: 3px; white-space: nowrap; }
+  .chip-icon { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; }
+  .chip-dir { font-size: 0.82rem; color: #c2ccd2; font-weight: 600; line-height: 1.1; text-align: center;
+              max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip-end { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .chip-time { font-size: 1.5rem; font-weight: 200; line-height: 1; min-width: 34px; text-align: right; }
+  .chip-time .unit { font-size: 0.6rem; color: #555; }
+  .chip-pill { font-size: 0.56rem; font-weight: 700; letter-spacing: 0.06em; padding: 2px 5px; border-radius: 3px; white-space: nowrap; }
   .pill-gone      { background: #1a1a1a; color: #333; }
   .pill-leave     { background: #4a3a00; color: #fccc0a; }
   .pill-catchable { background: #1a3a1a; color: #6cbe45; }
+
   .map-line  { fill: none; stroke-linecap: round; stroke-linejoin: round; }
-  .map-stop  { fill: #111; stroke: #2a2a2a; stroke-width: 1; }
-  .your-stop { fill: none; stroke-width: 2.5; }
-  .home-ring { fill: none; stroke: #fff; stroke-width: 1.5; opacity: 0.5; }
-  .train-dot { stroke: rgba(0,0,0,0.6); stroke-width: 1; }
-  footer { text-align: center; font-size: 0.65rem; color: #1a1a1a; padding: 8px; flex-shrink: 0; }
+  .map-stop  { fill: #e6ebee; stroke: none; }
+  .your-stop { fill: none; stroke-width: 3; }
+  .home-ring { fill: none; stroke: #fff; stroke-width: 1.5; opacity: 0.6; }
+  .train-dot { stroke: rgba(0,0,0,0.55); stroke-width: 1; }
+  .boro-land { fill: #1b222b; stroke: #2a333d; stroke-width: 1; }
+  .boro-label { fill: #3a4854; font-weight: 700; text-anchor: middle; letter-spacing: 3px; }
+  .stop-label { fill: #eaf2f7; font-size: 18px; font-weight: 600; letter-spacing: 0.3px;
+                paint-order: stroke; stroke: #0a1826; stroke-width: 3.5px; }
 </style>
 </head>
 <body>
-<header>
-  <div id="address">114 Leonard St, Brooklyn</div>
-  <div id="clock">--:--:--</div>
-  <div id="updated">--</div>
-</header>
-<div id="map-container">
-  <svg id="map-svg"></svg>
-</div>
-<div class="stations-panel" id="stations-panel">
-  <div style="color:#222">loading...</div>
-</div>
-<footer>nyc-subway-map · 30s refresh</footer>
+  <div id="left">
+    <div id="clock">--:--:--</div>
+    <div id="clock-date">NEW YORK CITY · LIVE</div>
+    <svg id="city-svg"></svg>
+  </div>
+  <div id="right">
+    <div id="area-wrap"><div class="map-label">Local stops</div><svg id="area-svg"></svg></div>
+    <div id="bottom">
+      <div id="bottom-head">
+        <div id="address">114 Leonard St, Brooklyn</div>
+        <div id="updated">--</div>
+      </div>
+      <div class="stations-panel" id="stations-panel"><div style="color:#222">loading...</div></div>
+    </div>
+  </div>
 
 <script>
-const HOME = { lat: 40.7142, lon: -73.9444 };
-const YOUR_STOP_IDS = ["L17", "G26", "J28", "L16"];
-const YOUR_STOP_COLORS = { "L17": "#a7a9ac", "G26": "#6cbe45", "J28": "#996633", "L16": "#a7a9ac" };
+const HOME = { lat: 40.70742, lon: -73.94640 };
+const YOUR_STOP_IDS = ["L10", "G29", "M14", "L13", "G30"];
+const YOUR_STOP_COLORS = { "L10": "#7c858c", "G29": "#799534", "M14": "#eb6800", "L13": "#7c858c", "G30": "#799534" };
+// Names to label on the local map (the stations you actually use)
+const STATION_LABELS = { "L10": "Lorimer St", "M14": "Hewes St", "L13": "Montrose Av", "G30": "Broadway" };
 
+// Region of interest for each map. drawn to fill its box (no letterbox).
+const CITY_ROI = { min_lat: 40.690, max_lat: 40.800, min_lon: -73.970, max_lon: -73.920 };
+const AREA_ROI = { min_lat: 40.700, max_lat: 40.724, min_lon: -73.962, max_lon: -73.930 };
+
+const TRUNK = ["1","2","3","4","5","6","7","A","C","E","N","Q","R","W","L"];
+const ROUTE_SLOT = {};   // routeId -> offset slot, so overlapping colors fan out
+const STOP_ON_LINE = {}; // stopId -> {route, s}: where the stop sits on a drawn line
 let mapData = null;
-let mapW = 0, mapH = 0, mapPad = 32;
+let vehicles = [];
+const vehSeg = new Map();   // trip id -> {next, seg}: locked segment duration
+const VIEWS = [];           // each: {proj, trainsG, vehEls, boxW, boxH, trainR}
 
 function pad(n) { return String(n).padStart(2, "0"); }
 function tick() {
@@ -97,15 +125,7 @@ function tick() {
   document.getElementById("clock").textContent =
     pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
 }
-setInterval(tick, 1000);
-tick();
-
-function project(lat, lon) {
-  const b = mapData.bounds;
-  const x = mapPad + (lon - b.min_lon) / (b.max_lon - b.min_lon) * mapW;
-  const y = mapPad + (1 - (lat - b.min_lat) / (b.max_lat - b.min_lat)) * mapH;
-  return [x, y];
-}
+setInterval(tick, 1000); tick();
 
 function svgEl(tag, attrs, parent) {
   const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -114,75 +134,236 @@ function svgEl(tag, attrs, parent) {
   return el;
 }
 
-function drawMap(data) {
-  const b = data.bounds;
-  const latRange = b.max_lat - b.min_lat;
-  const lonRange = b.max_lon - b.min_lon;
-  mapW = 1080 - mapPad * 2;
-  mapH = Math.round(mapW * (latRange / lonRange) * 1.4);
-
-  const svg = document.getElementById("map-svg");
-  const totalH = mapH + mapPad * 2;
-  svg.setAttribute("viewBox", `0 0 1080 ${totalH}`);
-  svg.setAttribute("width", "1080");
-  svg.setAttribute("height", totalH);
-  document.getElementById("map-container").style.height = totalH + "px";
-  svg.innerHTML = "";
-
-  const linesG  = svgEl("g", { id: "lines"  }, svg);
-  const stopsG  = svgEl("g", { id: "stops"  }, svg);
-  const yoursG  = svgEl("g", { id: "yours"  }, svg);
-  const homeG   = svgEl("g", { id: "home"   }, svg);
-  const trainsG = svgEl("g", { id: "trains" }, svg);
-
-  for (const [routeId, shapeList] of Object.entries(data.route_shapes)) {
-    const color = data.route_colors[routeId] || "#444";
-    const w = ["1","2","3","4","5","6","7","A","C","E","N","Q","R","W","L"].includes(routeId) ? 3.5 : 2.5;
-    for (const shape of shapeList) {
-      if (shape.length < 2) continue;
-      const d = shape.map(([lat, lon], i) => {
-        const [x, y] = project(lat, lon);
-        return (i === 0 ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1);
-      }).join(" ");
-      svgEl("path", { d, class: "map-line", stroke: color, "stroke-width": w }, linesG);
-    }
-  }
-
-  for (const stop of data.stops) {
-    const [x, y] = project(stop.lat, stop.lon);
-    const isYours = YOUR_STOP_IDS.some(id => stop.id.startsWith(id));
-    if (isYours) {
-      const color = Object.entries(YOUR_STOP_COLORS).find(([id]) => stop.id.startsWith(id))?.[1] || "#fff";
-      svgEl("circle", { cx: x, cy: y, r: 8, class: "your-stop", stroke: color }, yoursG);
-      svgEl("circle", { cx: x, cy: y, r: 3.5, fill: color }, yoursG);
-    } else {
-      svgEl("circle", { cx: x, cy: y, r: 2, class: "map-stop" }, stopsG);
-    }
-  }
-
-  const [hx, hy] = project(HOME.lat, HOME.lon);
-  svgEl("circle", { cx: hx, cy: hy, r: 14, class: "home-ring" }, homeG);
-  svgEl("circle", { cx: hx, cy: hy, r: 5,  fill: "#fff" }, homeG);
+function project(p, lat, lon) {
+  // Local equal-distance coords about the view center, then rotate (so Manhattan
+  // can stand vertical), then scale into the box.
+  const ex = (lon - p.cLon) * p.cosLat;
+  const ny = (lat - p.cLat);
+  const rx = ex * p.cosT - ny * p.sinT;
+  const ry = ex * p.sinT + ny * p.cosT;
+  return [p.cx + rx * p.scale, p.cy - ry * p.scale];
 }
 
-function drawTrains(trains) {
-  const trainsG = document.getElementById("trains");
-  if (!trainsG || !mapData) return;
-  trainsG.innerHTML = "";
-  const now = Date.now() / 1000;
-  const seen = new Set();
-  for (const t of trains) {
-    const wait = t.arrival - now;
-    if (wait < 0 || wait > 600) continue;
-    const key = t.stop_id + ":" + t.route;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const stop = mapData.stops.find(s => s.id === t.stop_id);
-    if (!stop) continue;
-    const [x, y] = project(stop.lat, stop.lon);
-    const color = mapData.route_colors[t.route] || "#888";
-    svgEl("circle", { cx: x, cy: y, r: 6, fill: color, class: "train-dot" }, trainsG);
+function buildProj(roi, boxW, boxH, pad, rotateDeg) {
+  const cLat = (roi.min_lat + roi.max_lat) / 2;
+  const cLon = (roi.min_lon + roi.max_lon) / 2;
+  const cosLat = Math.cos(cLat * Math.PI / 180);
+  let latSpan = roi.max_lat - roi.min_lat;
+  let lonSpan = roi.max_lon - roi.min_lon;
+  const innerW = boxW - pad * 2, innerH = boxH - pad * 2;
+  const boxAspect = innerW / innerH;
+  const roiAspect = (lonSpan * cosLat) / latSpan;
+  if (roiAspect < boxAspect) lonSpan = latSpan * boxAspect / cosLat;
+  else latSpan = lonSpan * cosLat / boxAspect;
+  const geoW = lonSpan * cosLat, geoH = latSpan;
+  const T = (rotateDeg || 0) * Math.PI / 180;
+  const c = Math.abs(Math.cos(T)), s = Math.abs(Math.sin(T));
+  // Fit the rotated window inside the box (corners may show water).
+  const footW = (geoW / 2) * c + (geoH / 2) * s;
+  const footH = (geoW / 2) * s + (geoH / 2) * c;
+  const scale = Math.min(innerW / (2 * footW), innerH / (2 * footH));
+  return {
+    scale, cLat, cLon, cosLat,
+    cx: boxW / 2, cy: boxH / 2,
+    sinT: Math.sin(T), cosT: Math.cos(T),
+  };
+}
+
+// Build an SVG path for a projected polyline, shifted perpendicular by `off` px
+// so routes sharing the same track render as parallel colored lines.
+function offsetPath(pts, off) {
+  let d = "";
+  for (let i = 0; i < pts.length; i++) {
+    let x = pts[i][0], y = pts[i][1];
+    if (off !== 0) {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+      let tx = b[0] - a[0], ty = b[1] - a[1];
+      const len = Math.hypot(tx, ty) || 1;
+      x += (-ty / len) * off;
+      y += (tx / len) * off;
+    }
+    d += (i ? " L" : "M") + x.toFixed(1) + "," + y.toFixed(1);
   }
+  return d;
+}
+
+// Screen position of a stop, placed on its route's color-offset line (so the
+// dot sits on the line, not on the un-offset true coordinate). Falls back to
+// the raw coordinate for stops not on any drawn trunk.
+function stopPx(proj, ls, stop) {
+  const info = STOP_ON_LINE[stop.id];
+  if (!info) return project(proj, stop.lat, stop.lon);
+  const rp = mapData.route_paths[info.route];
+  let [x, y] = project(proj, ...sampleAlong(rp, info.s));
+  const slot = ROUTE_SLOT[info.route] || 0;
+  if (slot) {
+    const [ax, ay] = project(proj, ...sampleAlong(rp, Math.min(1, info.s + 0.003)));
+    const tx = ax - x, ty = ay - y, len = Math.hypot(tx, ty) || 1;
+    const off = slot * 1.8 * ls;
+    x += (-ty / len) * off; y += (tx / len) * off;
+  }
+  return [x, y];
+}
+
+function sampleAlong(rp, s) {
+  s = Math.max(0, Math.min(1, s));
+  const cum = rp.cum, path = rp.path;
+  let lo = 0, hi = cum.length - 1;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (cum[m] < s) lo = m + 1; else hi = m; }
+  const i = Math.max(1, lo);
+  const seg = (cum[i] - cum[i - 1]) || 1e-9;
+  const f = (s - cum[i - 1]) / seg;
+  return [
+    path[i - 1][0] + f * (path[i][0] - path[i - 1][0]),
+    path[i - 1][1] + f * (path[i][1] - path[i - 1][1]),
+  ];
+}
+
+function setupView(svgId, roi, boxW, boxH, opts) {
+  const svg = document.getElementById(svgId);
+  svg.setAttribute("viewBox", `0 0 ${boxW} ${boxH}`);
+  svg.setAttribute("width", boxW); svg.setAttribute("height", boxH);
+  svg.innerHTML = "";
+  const proj = buildProj(roi, boxW, boxH, opts.pad ?? 22, opts.rotate || 0);
+  const cull = (x, y) => x < -30 || x > boxW + 30 || y < -30 || y > boxH + 30;
+
+  svgEl("rect", { x: 0, y: 0, width: boxW, height: boxH, fill: "#0a1826" }, svg); // water
+
+  const landG = svgEl("g", {}, svg);
+  for (const b of (mapData.boroughs || [])) {
+    for (const ring of b.rings) {
+      const d = ring.map(([lat, lon], i) => {
+        const [x, y] = project(proj, lat, lon);
+        return (i ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1);
+      }).join(" ") + " Z";
+      svgEl("path", { d, class: "boro-land" }, landG);
+    }
+  }
+  if (opts.labels) {
+    for (const b of (mapData.boroughs || [])) {
+      const [x, y] = project(proj, b.label[0], b.label[1]);
+      if (cull(x, y)) continue;
+      const t = svgEl("text", { x, y, class: "boro-label", "font-size": opts.labelSize || 36 }, svg);
+      t.textContent = b.name.toUpperCase();
+    }
+  }
+
+  // One clean line per route (its trunk), offset perpendicular by color so only
+  // different-colored routes fan apart; same-color routes stack into one line.
+  const linesG = svgEl("g", {}, svg);
+  const ls = opts.lineScale || 1;
+  const spacing = 1.8 * ls;
+  for (const [routeId, rp] of Object.entries(mapData.route_paths)) {
+    if (!rp.path || rp.path.length < 2) continue;
+    const color = mapData.route_colors[routeId] || "#444";
+    const w = (TRUNK.includes(routeId) ? 3.8 : 2.8) * ls;
+    const off = (ROUTE_SLOT[routeId] || 0) * spacing;
+    const pts = rp.path.map(([lat, lon]) => project(proj, lat, lon));
+    svgEl("path", { d: offsetPath(pts, off), class: "map-line", stroke: color, "stroke-width": w }, linesG);
+  }
+
+  const stopsG = svgEl("g", {}, svg);
+  for (const stop of mapData.stops) {
+    const [x, y] = stopPx(proj, ls, stop);
+    if (cull(x, y)) continue;
+    if (YOUR_STOP_IDS.includes(stop.id)) {
+      const color = YOUR_STOP_COLORS[stop.id] || "#fff";
+      svgEl("circle", { cx: x, cy: y, r: (opts.yourR || 8), class: "your-stop", stroke: color }, stopsG);
+      svgEl("circle", { cx: x, cy: y, r: (opts.yourR || 8) * 0.42, fill: color }, stopsG);
+    } else {
+      svgEl("circle", { cx: x, cy: y, r: opts.stopR || 2, class: "map-stop" }, stopsG);
+    }
+  }
+
+  const [hx, hy] = project(proj, HOME.lat, HOME.lon);
+  svgEl("circle", { cx: hx, cy: hy, r: opts.homeR || 13, class: "home-ring" }, svg);
+  svgEl("circle", { cx: hx, cy: hy, r: (opts.homeR || 13) * 0.36, fill: "#fff" }, svg);
+
+  const trainsG = svgEl("g", {}, svg);
+
+  if (opts.stopLabels) {
+    for (const stop of mapData.stops) {
+      const name = STATION_LABELS[stop.id];
+      if (!name) continue;
+      const [x, y] = stopPx(proj, ls, stop);
+      const t = svgEl("text", { x: x + 13, y: y + 6, class: "stop-label" }, svg);
+      t.textContent = name;
+    }
+  }
+
+  VIEWS.push({ proj, trainsG, vehEls: new Map(), boxW, boxH, trainR: opts.trainR || 5.5, lineScale: opts.lineScale || 1 });
+}
+
+// Returns the train's position on its route path plus a point just ahead (for
+// tangent), so animateTrains can shift it onto the same color-offset line.
+function trainLatLon(v, now) {
+  const rp = mapData.route_paths[v.route];
+  if (rp && rp.stopT[v.next] !== undefined) {
+    const ns = rp.stopT[v.next];
+    const ps = (v.prev != null && rp.stopT[v.prev] !== undefined) ? rp.stopT[v.prev] : ns;
+    let frac = 1 - (v.next_arr - now) / (v._seg || v.seg_time || 90);
+    frac = Math.max(0, Math.min(1, frac));
+    const s = ps + frac * (ns - ps);
+    return { pt: sampleAlong(rp, s), ahead: sampleAlong(rp, Math.min(1, s + 0.003)) };
+  }
+  return null;  // stop isn't on the drawn trunk (a branch) -> hide, no floating dot
+}
+
+function animateTrains() {
+  if (!mapData) return;
+  const now = Date.now() / 1000;
+  for (const v of vehicles) {
+    const info = trainLatLon(v, now);
+    const slot = ROUTE_SLOT[v.route] || 0;
+    for (const view of VIEWS) {
+      const el = view.vehEls.get(v.id);
+      if (!el) continue;
+      if (!info) { el.setAttribute("opacity", "0"); continue; }
+      let [x, y] = project(view.proj, info.pt[0], info.pt[1]);
+      // Shift onto this route's color-offset line (match offsetPath spacing).
+      if (slot !== 0 && info.ahead) {
+        const [ax, ay] = project(view.proj, info.ahead[0], info.ahead[1]);
+        let tx = ax - x, ty = ay - y;
+        const len = Math.hypot(tx, ty) || 1;
+        const off = slot * 1.8 * (view.lineScale || 1);
+        x += (-ty / len) * off;
+        y += (tx / len) * off;
+      }
+      if (x < -10 || x > view.boxW + 10 || y < -10 || y > view.boxH + 10) {
+        el.setAttribute("opacity", "0"); continue;
+      }
+      el.setAttribute("cx", x.toFixed(2));
+      el.setAttribute("cy", y.toFixed(2));
+      el.setAttribute("opacity", "1");
+    }
+  }
+}
+
+function syncVehicles(list) {
+  if (!mapData) return;
+  const now = Date.now() / 1000;
+  const keep = new Set();
+  for (const v of list) {
+    keep.add(v.id);
+    const prev = vehSeg.get(v.id);
+    if (prev && prev.next === v.next) v._seg = prev.seg;
+    else v._seg = Math.max(v.seg_time || 90, v.next_arr - now);
+    vehSeg.set(v.id, { next: v.next, seg: v._seg });
+    const color = mapData.route_colors[v.route] || "#888";
+    for (const view of VIEWS) {
+      let el = view.vehEls.get(v.id);
+      if (!el) { el = svgEl("circle", { r: view.trainR, class: "train-dot" }, view.trainsG); view.vehEls.set(v.id, el); }
+      el.setAttribute("fill", color);
+    }
+  }
+  for (const view of VIEWS) {
+    for (const [id, el] of view.vehEls) {
+      if (!keep.has(id)) { el.remove(); view.vehEls.delete(id); }
+    }
+  }
+  for (const [id] of vehSeg) if (!keep.has(id)) vehSeg.delete(id);
+  vehicles = list;
+  animateTrains();
 }
 
 function badge(route, size) {
@@ -193,19 +374,21 @@ function renderStations(data) {
   document.getElementById("updated").textContent =
     "updated " + new Date(data.updated).toLocaleTimeString();
   document.getElementById("stations-panel").innerHTML = data.stations.map(s => {
-    const chips = s.arrivals.map(a => {
-      const gone    = a.arrives_in_min < s.walk_min;
-      const urgent  = !gone && a.arrives_in_min <= s.walk_min + 2;
-      const cls     = gone ? "arrival-chip gone" : urgent ? "arrival-chip urgent" : "arrival-chip catchable";
-      const pill    = gone
+    const chips = s.arrivals.slice(0, 5).map(a => {
+      const gone   = a.arrives_in_min < s.walk_min;
+      const urgent = !gone && a.arrives_in_min <= s.walk_min + 2;
+      const cls    = gone ? "arrival-chip gone" : urgent ? "arrival-chip urgent" : "arrival-chip catchable";
+      const pill   = gone
         ? '<span class="chip-pill pill-gone">gone</span>'
-        : urgent
-        ? '<span class="chip-pill pill-leave">NOW</span>'
-        : '<span class="chip-pill pill-catchable">ok</span>';
+        : urgent ? '<span class="chip-pill pill-leave">NOW</span>'
+                 : '<span class="chip-pill pill-catchable">ok</span>';
       const time = a.arrives_in_min <= 0
         ? `<span class="chip-time" style="font-size:0.85rem;color:#555">arr</span>`
         : `<span class="chip-time">${a.arrives_in_min}<span class="unit">m</span></span>`;
-      return `<div class="${cls}">${badge(a.route,26)}<span class="chip-dir">${a.direction}</span>${pill}${time}</div>`;
+      return `<div class="${cls}">
+        <div class="chip-icon">${badge(a.route,28)}<span class="chip-dir">${a.direction}</span></div>
+        <div class="chip-end">${time}${pill}</div>
+      </div>`;
     }).join("");
     return `<div class="station">
       <div class="station-left">
@@ -222,22 +405,39 @@ async function fetchStations() {
   try { renderStations(await (await fetch("/api/stations")).json()); }
   catch(e) { document.getElementById("updated").textContent = "error"; }
 }
-
-async function fetchTrains() {
-  try { drawTrains((await (await fetch("/api/trains")).json()).trains); }
+async function fetchVehicles() {
+  try { syncVehicles((await (await fetch("/api/vehicles")).json()).vehicles); }
   catch(e) {}
 }
 
 async function init() {
   mapData = await (await fetch("/static/map_data.json")).json();
-  drawMap(mapData);
+  mapData.stopIndex = Object.fromEntries(mapData.stops.map(s => [s.id, s]));
+  // Offset by COLOR (not per route): same-color routes share a slot and stack
+  // into one line; different colors get different slots and fan out where they
+  // share track. Slots centered around 0.
+  const colors = [...new Set(Object.values(mapData.route_colors))];
+  const colorSlot = {};
+  colors.forEach((c, i) => { colorSlot[c] = i - (colors.length - 1) / 2; });
+  for (const id of Object.keys(mapData.route_paths)) {
+    ROUTE_SLOT[id] = colorSlot[mapData.route_colors[id]] || 0;
+  }
+  // Map each stop to a drawn line so its dot can sit on the offset line.
+  for (const [routeId, rp] of Object.entries(mapData.route_paths)) {
+    for (const sid in rp.stopT) {
+      if (!STOP_ON_LINE[sid]) STOP_ON_LINE[sid] = { route: routeId, s: rp.stopT[sid] };
+    }
+  }
+  setupView("city-svg", CITY_ROI, 1120, 1080, { rotate: 29, labels: true, labelSize: 36, stopR: 2.2, yourR: 8, trainR: 5, homeR: 13 });
+  setupView("area-svg", AREA_ROI, 800, 330, { labels: false, stopLabels: true, lineScale: 1.9, stopR: 4, yourR: 12, trainR: 7, homeR: 17, pad: 20 });
   await fetchStations();
-  await fetchTrains();
+  await fetchVehicles();
 }
 
 init();
 setInterval(fetchStations, 30000);
-setInterval(fetchTrains, 30000);
+setInterval(fetchVehicles, 30000);
+setInterval(animateTrains, 50);
 </script>
 </body>
 </html>
