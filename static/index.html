@@ -81,9 +81,20 @@
   .boro-label { fill: #3a4854; font-weight: 700; text-anchor: middle; letter-spacing: 3px; }
   .stop-label { fill: #eaf2f7; font-size: 18px; font-weight: 600; letter-spacing: 0.3px;
                 paint-order: stroke; stroke: #0a1826; stroke-width: 3.5px; }
+  /* Debug tuning panel (press D to toggle) */
+  #debug { display: none; position: fixed; top: 8px; right: 8px; width: 260px; max-height: 96vh; overflow: auto;
+           z-index: 50; background: rgba(4,10,16,0.9); border: 1px solid #2a3f4f; border-radius: 8px;
+           padding: 8px 10px; font-size: 11px; color: #b9c6cf; }
+  #debug .drow { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  #debug label { width: 52px; flex-shrink: 0; color: #7f94a2; }
+  #debug input[type=range] { flex: 1; min-width: 0; }
+  #debug span { width: 52px; flex-shrink: 0; text-align: right; color: #8fdcb0; }
+  #debug textarea { width: 100%; height: 70px; margin-top: 8px; font-size: 10px; resize: vertical;
+                    background: #06101a; color: #8fdcb0; border: 1px solid #2a3f4f; border-radius: 4px; }
 </style>
 </head>
 <body>
+  <div id="debug"></div>
   <div id="left">
     <div id="clock">--:--:--</div>
     <div id="clock-date">NEW YORK CITY · LIVE</div>
@@ -108,7 +119,15 @@ const YOUR_STOP_COLORS = { "L10": "#7c858c", "G29": "#799534", "M14": "#eb6800",
 const STATION_LABELS = { "L10": "Lorimer St", "M14": "Hewes St", "L13": "Montrose Av", "G30": "Broadway" };
 
 // Region of interest for each map. drawn to fill its box (no letterbox).
-const CITY_ROI = { min_lat: 40.690, max_lat: 40.800, min_lon: -73.970, max_lon: -73.920 };
+const CITY_ROI = { min_lat: 40.620, max_lat: 40.794, min_lon: -73.946, max_lon: -73.800 };
+// City map projection options (tunable live via the debug panel — press D).
+const CITY_OPTS = {
+  rotate: 29, labels: true, labelSize: 36, stopR: 2.2, yourR: 8, trainR: 5, homeR: 13,
+  // Stretch bands in post-rotation x/y (x = horizontal, y = vertical/up).
+  Ex: 2.45, Cx: 0.7, xL: -5, xR: 13.5,                  // Manhattan width band
+  Ey: 1.7, Cy: 0.62, Gy: 0.55, y0: -55, y1: 1, y2: -18, y3: 19,  // FiDi | gap | midtown
+  tw: 0.0,      // band-edge smoothing width (0 = sharp; higher = gentler bends)
+};
 const AREA_ROI = { min_lat: 40.700, max_lat: 40.724, min_lon: -73.962, max_lon: -73.930 };
 
 const TRUNK = ["1","2","3","4","5","6","7","A","C","E","N","Q","R","W","L"];
@@ -135,38 +154,104 @@ function svgEl(tag, attrs, parent) {
 }
 
 function project(p, lat, lon) {
-  // Local equal-distance coords about the view center, then rotate (so Manhattan
-  // can stand vertical), then scale into the box.
-  const ex = (lon - p.cLon) * p.cosLat;
-  const ny = (lat - p.cLat);
-  const rx = ex * p.cosT - ny * p.sinT;
-  const ry = ex * p.sinT + ny * p.cosT;
-  return [p.cx + rx * p.scale, p.cy - ry * p.scale];
+  const [lx, ly] = localXform(p, lat, lon);
+  return [p.bx + (lx - p.midX) * p.scale, p.by - (ly - p.midY) * p.scale];
 }
 
-function buildProj(roi, boxW, boxH, pad, rotateDeg) {
+// Piecewise-linear stretch of one axis: widen the band [L,R] by E (around mc),
+// compress outside it by C. Keeps lines straight (only a kink at a band edge).
+function stretch1(v, L, R, mc, E, C, w) {
+  if (!E || E === 1) return v;
+  if (!w || w <= 1e-9) {                              // hard piecewise (sharp kinks)
+    if (v > R) return mc + E * (R - mc) + C * (v - R);
+    if (v < L) return mc + E * (L - mc) + C * (v - L);
+    return mc + E * (v - mc);
+  }
+  // Smooth (C1) transition of width w at each band edge -> lines bend gently
+  // across the shoreline instead of a sharp jog.
+  w = Math.min(w, (R - L) * 0.9);
+  const hw = w / 2;
+  if (v >= mc) {
+    const Rin = R - hw, Rout = R + hw;
+    if (v <= Rin) return mc + E * (v - mc);
+    if (v <= Rout) { const x = v - Rin; return mc + E * (Rin - mc) + E * x + (C - E) * x * x / (2 * w); }
+    return mc + E * (Rin - mc) + w * (E + C) / 2 + C * (v - Rout);
+  }
+  const Lin = L + hw, Lout = L - hw;
+  if (v >= Lin) return mc + E * (v - mc);
+  if (v >= Lout) { const x = Lin - v; return mc + E * (Lin - mc) - E * x - (C - E) * x * x / (2 * w); }
+  return mc + E * (Lin - mc) - w * (E + C) / 2 - C * (Lout - v);
+}
+
+// Multi-band vertical scale (south->north b0<b1<b2<b3): density C outside,
+// E in the FiDi band [b0,b1] and midtown band [b2,b3], G in the gap [b1,b2].
+// Lets us expand the two dense bands but shrink the low-traffic gap between them.
+function stretchYmulti(v, b0, b1, b2, b3, E, G, C) {
+  let p;
+  if (v < b0) p = C * (v - b0);
+  else if (v <= b1) p = E * (v - b0);
+  else if (v <= b2) p = E * (b1 - b0) + G * (v - b1);
+  else if (v <= b3) p = E * (b1 - b0) + G * (b2 - b1) + E * (v - b2);
+  else p = E * (b1 - b0) + G * (b2 - b1) + E * (b3 - b2) + C * (v - b3);
+  return b0 + p;
+}
+
+// Fixed rotation origin so the x/y band coords below are absolute (independent
+// of the crop). After rotation, x = horizontal on screen, y = vertical (up).
+// Units are ~PSCALE per degree (a few tens across Manhattan).
+const REF_LAT = 40.75, REF_LON = -73.99;
+const REF_COSLAT = Math.cos(REF_LAT * Math.PI / 180), PSCALE = 1000;
+
+// (lat,lon) -> rotated x/y, then stretch x (widen Manhattan, squeeze rivers) and
+// y (expand the dense FiDi & midtown bands, shrink the low-traffic gap between).
+// Box scale applied in project().
+function localXform(p, lat, lon) {
+  const ex = (lon - REF_LON) * REF_COSLAT;
+  const ny = (lat - REF_LAT);
+  let rx = (ex * p.cosT - ny * p.sinT) * PSCALE;
+  let ry = (ex * p.sinT + ny * p.cosT) * PSCALE;
+  if (p.Ex) rx = stretch1(rx, p.xL, p.xR, (p.xL + p.xR) / 2, p.Ex, p.Cx, p.Wx);
+  if (p.Ey) ry = stretchYmulti(ry, p.y0, p.y1, p.y2, p.y3, p.Ey, p.Gy, p.Cy);
+  return [rx, ry];
+}
+
+function buildProj(roi, boxW, boxH, pad, o) {
+  o = o || {};
   const cLat = (roi.min_lat + roi.max_lat) / 2;
   const cLon = (roi.min_lon + roi.max_lon) / 2;
   const cosLat = Math.cos(cLat * Math.PI / 180);
+  const innerW = boxW - pad * 2, innerH = boxH - pad * 2;
   let latSpan = roi.max_lat - roi.min_lat;
   let lonSpan = roi.max_lon - roi.min_lon;
-  const innerW = boxW - pad * 2, innerH = boxH - pad * 2;
   const boxAspect = innerW / innerH;
-  const roiAspect = (lonSpan * cosLat) / latSpan;
-  if (roiAspect < boxAspect) lonSpan = latSpan * boxAspect / cosLat;
+  if ((lonSpan * cosLat) / latSpan < boxAspect) lonSpan = latSpan * boxAspect / cosLat;
   else latSpan = lonSpan * cosLat / boxAspect;
-  const geoW = lonSpan * cosLat, geoH = latSpan;
-  const T = (rotateDeg || 0) * Math.PI / 180;
-  const c = Math.abs(Math.cos(T)), s = Math.abs(Math.sin(T));
-  // Fit the rotated window inside the box (corners may show water).
-  const footW = (geoW / 2) * c + (geoH / 2) * s;
-  const footH = (geoW / 2) * s + (geoH / 2) * c;
-  const scale = Math.min(innerW / (2 * footW), innerH / (2 * footH));
-  return {
-    scale, cLat, cLon, cosLat,
-    cx: boxW / 2, cy: boxH / 2,
-    sinT: Math.sin(T), cosT: Math.cos(T),
-  };
+  const NLAT = cLat - latSpan / 2, XLAT = cLat + latSpan / 2;
+  const NLON = cLon - lonSpan / 2, XLON = cLon + lonSpan / 2;
+
+  const T = (o.rotate || 0) * Math.PI / 180;
+  const p = { cosT: Math.cos(T), sinT: Math.sin(T), Ex: 0, Ey: 0 };
+  if (o.Ex) {
+    p.xL = Math.min(o.xL, o.xR); p.xR = Math.max(o.xL, o.xR);
+    p.Ex = o.Ex; p.Cx = o.Cx ?? 0.5; p.Wx = (o.tw ?? 0) * (p.xR - p.xL);
+  }
+  if (o.Ey) {
+    const ys = [o.y0, o.y1, o.y2, o.y3].slice().sort((a, b) => a - b);
+    p.y0 = ys[0]; p.y1 = ys[1]; p.y2 = ys[2]; p.y3 = ys[3];
+    p.Ey = o.Ey; p.Gy = o.Gy ?? 1; p.Cy = o.Cy ?? 0.7;
+  }
+  // Fit the transformed window into the box by sampling a grid.
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  const N = 12;
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+    const [lx, ly] = localXform(p, NLAT + (XLAT - NLAT) * i / N, NLON + (XLON - NLON) * j / N);
+    if (lx < minX) minX = lx; if (lx > maxX) maxX = lx;
+    if (ly < minY) minY = ly; if (ly > maxY) maxY = ly;
+  }
+  p.scale = Math.min(innerW / ((maxX - minX) || 1e-9), innerH / ((maxY - minY) || 1e-9));
+  p.midX = (minX + maxX) / 2; p.midY = (minY + maxY) / 2;
+  p.bx = boxW / 2; p.by = boxH / 2;
+  return p;
 }
 
 // Build an SVG path for a projected polyline, shifted perpendicular by `off` px
@@ -224,7 +309,7 @@ function setupView(svgId, roi, boxW, boxH, opts) {
   svg.setAttribute("viewBox", `0 0 ${boxW} ${boxH}`);
   svg.setAttribute("width", boxW); svg.setAttribute("height", boxH);
   svg.innerHTML = "";
-  const proj = buildProj(roi, boxW, boxH, opts.pad ?? 22, opts.rotate || 0);
+  const proj = buildProj(roi, boxW, boxH, opts.pad ?? 22, opts);
   const cull = (x, y) => x < -30 || x > boxW + 30 || y < -30 || y > boxH + 30;
 
   svgEl("rect", { x: 0, y: 0, width: boxW, height: boxH, fill: "#0a1826" }, svg); // water
@@ -291,7 +376,8 @@ function setupView(svgId, roi, boxW, boxH, opts) {
     }
   }
 
-  VIEWS.push({ proj, trainsG, vehEls: new Map(), boxW, boxH, trainR: opts.trainR || 5.5, lineScale: opts.lineScale || 1 });
+  for (let i = VIEWS.length - 1; i >= 0; i--) if (VIEWS[i].svgId === svgId) VIEWS.splice(i, 1);
+  VIEWS.push({ svgId, proj, trainsG, vehEls: new Map(), boxW, boxH, trainR: opts.trainR || 5.5, lineScale: opts.lineScale || 1 });
 }
 
 // Returns the train's position on its route path plus a point just ahead (for
@@ -428,10 +514,57 @@ async function init() {
       if (!STOP_ON_LINE[sid]) STOP_ON_LINE[sid] = { route: routeId, s: rp.stopT[sid] };
     }
   }
-  setupView("city-svg", CITY_ROI, 1120, 1080, { rotate: 29, labels: true, labelSize: 36, stopR: 2.2, yourR: 8, trainR: 5, homeR: 13 });
+  setupView("city-svg", CITY_ROI, 1120, 1080, CITY_OPTS);
   setupView("area-svg", AREA_ROI, 800, 330, { labels: false, stopLabels: true, lineScale: 1.9, stopR: 4, yourR: 12, trainR: 7, homeR: 17, pad: 20 });
+  buildDebug();
   await fetchStations();
   await fetchVehicles();
+}
+
+// Redraw just the city map from the current CITY_OPTS/CITY_ROI (debug tuning).
+function rebuildCity() {
+  setupView("city-svg", CITY_ROI, 1120, 1080, CITY_OPTS);
+  syncVehicles(vehicles);
+}
+
+// Live tuning panel. Press D to toggle. Reports current values to copy back.
+function buildDebug() {
+  const T = [
+    ["rotate", CITY_OPTS, 0, 45, 1],
+    ["Ex", CITY_OPTS, 1, 3, 0.05], ["Cx", CITY_OPTS, 0.2, 1, 0.02],
+    ["Ey", CITY_OPTS, 1, 3, 0.05], ["Gy", CITY_OPTS, 0.3, 1.5, 0.05], ["Cy", CITY_OPTS, 0.2, 1, 0.02],
+    ["tw", CITY_OPTS, 0, 1, 0.05],
+    ["xL", CITY_OPTS, -50, 10, 0.5], ["xR", CITY_OPTS, -10, 50, 0.5],
+    ["y0", CITY_OPTS, -70, -10, 1], ["y1", CITY_OPTS, -45, 5, 1],
+    ["y2", CITY_OPTS, -35, 15, 1], ["y3", CITY_OPTS, -5, 50, 1],
+    ["min_lon", CITY_ROI, -74.05, -73.86, 0.002], ["max_lon", CITY_ROI, -74.0, -73.80, 0.002],
+    ["min_lat", CITY_ROI, 40.62, 40.74, 0.002], ["max_lat", CITY_ROI, 40.74, 40.90, 0.002],
+  ];
+  const panel = document.getElementById("debug");
+  const out = document.createElement("textarea");
+  const refresh = () => {
+    out.value =
+      "CITY_ROI " + JSON.stringify(CITY_ROI) + "\n" +
+      "stretch " + JSON.stringify({
+        rotate: CITY_OPTS.rotate, Ex: CITY_OPTS.Ex, Cx: CITY_OPTS.Cx,
+        Ey: CITY_OPTS.Ey, Gy: CITY_OPTS.Gy, Cy: CITY_OPTS.Cy, tw: CITY_OPTS.tw,
+        xL: CITY_OPTS.xL, xR: CITY_OPTS.xR,
+        y0: CITY_OPTS.y0, y1: CITY_OPTS.y1, y2: CITY_OPTS.y2, y3: CITY_OPTS.y3,
+      });
+  };
+  for (const [k, obj, mn, mx, st] of T) {
+    const row = document.createElement("div"); row.className = "drow";
+    const lab = document.createElement("label"); lab.textContent = k;
+    const val = document.createElement("span"); val.textContent = (+obj[k]).toFixed(3);
+    const sl = document.createElement("input");
+    sl.type = "range"; sl.min = mn; sl.max = mx; sl.step = st; sl.value = obj[k];
+    sl.oninput = () => { obj[k] = parseFloat(sl.value); val.textContent = (+obj[k]).toFixed(3); rebuildCity(); refresh(); };
+    row.append(lab, sl, val); panel.appendChild(row);
+  }
+  panel.appendChild(out); refresh();
+  window.addEventListener("keydown", e => {
+    if (e.key === "d" || e.key === "D") panel.style.display = panel.style.display === "none" ? "block" : "none";
+  });
 }
 
 init();
