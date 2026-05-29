@@ -206,7 +206,7 @@ def get_stations():
                 "name": station["name"],
                 "lines": station["lines"],
                 "walk_min": station["walk_min"],
-                "arrivals": arrivals[:6],
+                "arrivals": arrivals[:12],
             }
         )
     return jsonify({"home": HOME, "stations": result, "updated": cache["updated"]})

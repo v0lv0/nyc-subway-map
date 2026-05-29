@@ -82,6 +82,61 @@ def _path_len(pts):
     return tot
 
 
+def _seg_intersect(a, b, c, d):
+    """Intersection point of segments a-b and c-d, or None. Points are [lat,lon]."""
+    # work in (x=lon, y=lat)
+    ax, ay = a[1], a[0]
+    bx, by = b[1], b[0]
+    cx, cy = c[1], c[0]
+    dx_, dy_ = d[1], d[0]
+    rx, ry = bx - ax, by - ay
+    sx, sy = dx_ - cx, dy_ - cy
+    denom = rx * sy - ry * sx
+    if denom == 0:
+        return None  # parallel / collinear -- leave it
+    t = ((cx - ax) * sy - (cy - ay) * sx) / denom
+    u = ((cx - ax) * ry - (cy - ay) * rx) / denom
+    if 0.0 < t < 1.0 and 0.0 < u < 1.0:
+        return [round(ay + t * ry, 6), round(ax + t * rx, 6)]
+    return None
+
+
+def _deloop(path, radius=0.0009, window=120, min_span=3, detour=2.5):
+    """Remove loops, hairpins, and out-and-back spurs baked into the GTFS track
+    shape (e.g. the South Ferry balloon loop). Within a local `window` of
+    vertices, find where the path returns within `radius` (~90m) of an earlier
+    point AND the interior actually doubled back -- its arc-length is at least
+    `detour`x the straight gap. That span is excised and the ends joined across.
+
+    The detour guard is what makes it safe: a straight or gently-curving run has
+    arc-length ~= its chord (ratio ~1) so it is never touched; only a genuine
+    loop/spur (which travels far and returns near its start) clears the
+    threshold. The straight chord across the small gap is invisible at city
+    scale."""
+    pts = [p[:] for p in path]
+    i = 0
+    while i < len(pts) - 1:
+        hi = min(len(pts) - 1, i + window)
+        # cumulative arc-length from i, so we can test the detour ratio cheaply
+        arc = 0.0
+        cut = None
+        for j in range(i + 1, hi + 1):
+            dy = pts[j][0] - pts[j - 1][0]
+            dx = pts[j][1] - pts[j - 1][1]
+            arc += (dy * dy + dx * dx) ** 0.5
+            if j - i < min_span:
+                continue
+            gy = pts[j][0] - pts[i][0]
+            gx = pts[j][1] - pts[i][1]
+            gap = (gy * gy + gx * gx) ** 0.5
+            if gap <= radius and arc >= detour * max(gap, 1e-9):
+                cut = j  # keep scanning: take the farthest qualifying return
+        if cut is not None:
+            pts = pts[: i + 1] + pts[cut + 1 :]  # drop the loop/spur interior
+        i += 1
+    return pts
+
+
 def _snap(lat, lon, pts, cum):
     """Nearest point on the polyline -> (distance, normalized arclength)."""
     best_d = float("inf")
@@ -113,6 +168,7 @@ for rid, shape_list in route_shape_list.items():
     path = max(shape_list, key=_path_len)
     if len(path) < 2:
         continue
+    path = _deloop(path)  # drop South-Ferry-style self-intersection knots
     cum = [0.0]
     for i in range(1, len(path)):
         dy = path[i][0] - path[i - 1][0]
