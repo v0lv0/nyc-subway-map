@@ -1,16 +1,22 @@
-// Live-data config for the serverless (static) build. Mirrors stations.py and
-// the FEEDS / DIR_LABELS constants in app.py. Edit stations here the same way
-// you would in stations.py. (app.py still reads its own copy for local dev.)
+// Static config for the serverless build. No personal data lives here — your
+// home and stations are passed at runtime via URL parameters:
+//
+//   ?home=LAT,LON           e.g. ?home=40.7074,-73.9464
+//   ?home=<address>         e.g. ?home=350 5th Ave, New York  (geocoded)
+//   ?addr=<label>           display label for the address bar (optional)
+//   ?stops=ID1+ID2,ID3,...  station cards; join a transfer complex with '+'
+//                           e.g. ?stops=L10+G29,M14,L13,G30
+//
+// If ?stops is omitted, the nearest stations to home are chosen automatically.
+// If nothing is passed, the neutral default below is used (no personal info).
 
-window.HOME = "114 Leonard St, Brooklyn";
-
-// Your stations — name, line badges, walk time, and MTA GTFS parent stop ids.
-window.STATIONS = [
-  { name: "Lorimer St",  lines: ["L", "G"], walk_min: 7, stop_ids: ["L10", "G29"] },
-  { name: "Hewes St",    lines: ["J", "M"], walk_min: 9, stop_ids: ["M14"] },
-  { name: "Montrose Av", lines: ["L"],      walk_min: 9, stop_ids: ["L13"] },
-  { name: "Broadway",    lines: ["G"],      walk_min: 5, stop_ids: ["G30"] },
-];
+window.DEFAULTS = {
+  addr: "Times Sq, Manhattan",
+  home: [40.7559, -73.9870],
+  stops: [],          // [] => auto-pick nearest NUM_STATIONS to home
+};
+window.NUM_STATIONS = 4;     // how many station cards when stops are auto-picked
+window.WALK_MPM = 80;        // walking speed (metres/min) for the walk-time estimate
 
 // MTA GTFS-realtime feeds (CORS-open, no API key needed as of 2026).
 window.FEEDS = {

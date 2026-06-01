@@ -109,7 +109,7 @@
     <div id="area-wrap" class="floatwin"><div class="map-label">Local stops</div><svg id="area-svg"></svg></div>
     <div id="bottom">
       <div id="bottom-head">
-        <div id="address">114 Leonard St, Brooklyn</div>
+        <div id="address">—</div>
         <div id="updated">--</div>
       </div>
       <div class="stations-panel" id="stations-panel"><div style="color:#222">loading...</div></div>
@@ -120,11 +120,12 @@
 <script src="config.js"></script>
 <script src="feeds.js"></script>
 <script>
-const HOME = { lat: 40.70742, lon: -73.94640 };
-const YOUR_STOP_IDS = ["L10", "G29", "M14", "L13", "G30"];
-const YOUR_STOP_COLORS = { "L10": "#7c858c", "G29": "#799534", "M14": "#eb6800", "L13": "#7c858c", "G30": "#799534" };
-// Names to label on the local map (the stations you actually use)
-const STATION_LABELS = { "L10": "Lorimer St", "M14": "Hewes St", "L13": "Montrose Av", "G30": "Broadway" };
+// Home location + your stations are resolved at runtime from URL params
+// (see config.js). Nothing personal is hardcoded here.
+let HOME = null;                 // { lat, lon }
+let YOUR_STOP_IDS = [];          // flat list of highlighted stop ids on the area map
+let YOUR_STOP_COLORS = {};       // stop id -> line color for the area-map dot
+let STATION_LABELS = {};         // stop id -> label shown on the area map
 
 // Region of interest for each map. drawn to fill its box (no letterbox).
 const CITY_ROI = { min_lat: 40.600, max_lat: 40.794, min_lon: -73.946, max_lon: -73.905 };
@@ -138,8 +139,8 @@ const CITY_OPTS = {
   Ex: 2.45, Gx: 0.7, Cx: 0.55, x0: -5, x1: 13.5, x2: 33, x3: 50,  // Manhattan | river | Bklyn jct
   Ey: 1.7, Cy: 0.62, Gy: 0.55, y0: -55, y1: -18, y2: 1, y3: 19,   // FiDi | gap | midtown
 };
-// Square area centered on home (equal-distance lat/lon so it fills the square window).
-const AREA_ROI = { min_lat: 40.6944, max_lat: 40.7204, min_lon: -73.9636, max_lon: -73.9292 };
+// Square area centered on home (computed at runtime in resolveLocation()).
+let AREA_ROI = null;
 
 const TRUNK = ["1","2","3","4","5","6","7","A","C","E","N","Q","R","W","L"];
 const ROUTE_SLOT = {};   // routeId -> offset slot, so overlapping colors fan out
@@ -626,6 +627,92 @@ async function refreshLive() {
   }
 }
 
+// --- Runtime location/stations from URL params (keeps personal data out of the repo) ---
+function distM(a, b) {  // haversine metres between {lat,lon} points
+  const R = 6371000, to = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * to, dLon = (b.lon - a.lon) * to;
+  const x = Math.sin(dLat / 2) ** 2 +
+            Math.cos(a.lat * to) * Math.cos(b.lat * to) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+function walkMin(home, stop) { return Math.max(1, Math.round(distM(home, stop) / (window.WALK_MPM || 80))); }
+
+// Routes that serve a stop (those whose drawn trunk passes through it), ordered
+// with the trunk lines first so the badges read naturally.
+function linesForStop(id) {
+  const out = [];
+  for (const r of Object.keys(mapData.route_paths)) {
+    if (mapData.route_paths[r].stopT[id] !== undefined) out.push(r);
+  }
+  out.sort((a, b) => {
+    const ia = TRUNK.indexOf(a), ib = TRUNK.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  return out;
+}
+
+async function geocode(q) {
+  try {
+    const u = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(q);
+    const j = await (await fetch(u)).json();
+    if (j && j[0]) return { lat: +j[0].lat, lon: +j[0].lon };
+  } catch (e) { console.warn("geocode failed", e); }
+  return null;
+}
+
+// Resolve HOME + AREA_ROI from ?home=/?addr= (lat,lon pair or a geocoded address).
+async function resolveLocation() {
+  const q = new URLSearchParams(location.search);
+  let addr = q.get("addr") || "";
+  const home = q.get("home");
+  let lat = null, lon = null;
+  const m = home && home.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (m) {
+    lat = +m[1]; lon = +m[2];
+    if (!addr) addr = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+  } else if (home || addr) {
+    const query = home || addr;
+    const g = await geocode(query);
+    if (g) { lat = g.lat; lon = g.lon; if (!addr) addr = query; }
+  }
+  if (lat == null) { [lat, lon] = DEFAULTS.home; addr = addr || DEFAULTS.addr; }
+  HOME = { lat, lon };
+  // Square box around home (lon widened by cos(lat) so it fills the square window).
+  const latHalf = 0.013, lonHalf = latHalf / Math.cos(lat * Math.PI / 180);
+  AREA_ROI = { min_lat: lat - latHalf, max_lat: lat + latHalf, min_lon: lon - lonHalf, max_lon: lon + lonHalf };
+  document.getElementById("address").textContent = addr;
+}
+
+// Resolve station cards from ?stops=ID+ID,ID,... ('+' groups a transfer complex),
+// or auto-pick the nearest NUM_STATIONS to home. Populates window.STATIONS (for
+// the timetable) plus the area-map highlight/label globals.
+function resolveStations() {
+  const q = new URLSearchParams(location.search);
+  const raw = (q.get("stops") || DEFAULTS.stops.join(",")).trim();
+  let groups = raw
+    ? raw.split(",").map(g => g.split("+").map(s => s.trim()).filter(Boolean)).filter(g => g.length)
+    : [];
+  if (!groups.length) {
+    groups = mapData.stops
+      .map(s => [distM(HOME, s), s.id]).sort((a, b) => a[0] - b[0])
+      .slice(0, window.NUM_STATIONS || 4).map(x => [x[1]]);
+  }
+  YOUR_STOP_IDS = []; YOUR_STOP_COLORS = {}; STATION_LABELS = {};
+  const stations = [];
+  for (const ids of groups) {
+    const valid = ids.filter(id => mapData.stopIndex[id]);
+    if (!valid.length) continue;
+    const lines = [...new Set(valid.flatMap(linesForStop))];
+    const color = lines.length ? (mapData.route_colors[lines[0]] || "#fff") : "#fff";
+    const walk = Math.min(...valid.map(id => walkMin(HOME, mapData.stopIndex[id])));
+    const name = mapData.stopIndex[valid[0]].name;
+    for (const id of valid) { YOUR_STOP_IDS.push(id); YOUR_STOP_COLORS[id] = color; }
+    STATION_LABELS[valid[0]] = name;
+    stations.push({ name, lines, walk_min: walk, stop_ids: valid });
+  }
+  window.STATIONS = stations;
+}
+
 async function init() {
   mapData = await (await fetch("map_data.json")).json();
   mapData.stopIndex = Object.fromEntries(mapData.stops.map(s => [s.id, s]));
@@ -644,6 +731,8 @@ async function init() {
       if (!STOP_ON_LINE[sid]) STOP_ON_LINE[sid] = { route: routeId, s: rp.stopT[sid] };
     }
   }
+  await resolveLocation();   // sets HOME + AREA_ROI from URL params
+  resolveStations();         // sets window.STATIONS + area-map highlight globals
   initGrid();
   setupView("city-svg", CITY_ROI, 1920, 1080, CITY_OPTS);
   setupView("area-svg", AREA_ROI, 380, 380, { labels: false, stopLabels: true, lineScale: 1.9, stopR: 4, yourR: 12, trainR: 7, homeR: 17, pad: 20 });
