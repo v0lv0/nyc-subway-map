@@ -116,6 +116,9 @@
     </div>
   </div>
 
+<script src="https://cdn.jsdelivr.net/npm/protobufjs@7.2.6/dist/protobuf.min.js"></script>
+<script src="config.js"></script>
+<script src="feeds.js"></script>
 <script>
 const HOME = { lat: 40.70742, lon: -73.94640 };
 const YOUR_STOP_IDS = ["L10", "G29", "M14", "L13", "G30"];
@@ -611,17 +614,20 @@ function renderStations(data) {
   }).join("");
 }
 
-async function fetchStations() {
-  try { renderStations(await (await fetch("/api/stations")).json()); }
-  catch(e) { document.getElementById("updated").textContent = "error"; }
-}
-async function fetchVehicles() {
-  try { syncVehicles((await (await fetch("/api/vehicles")).json()).vehicles); }
-  catch(e) {}
+// One fetch of all MTA feeds (client-side, no server) feeds both panels.
+async function refreshLive() {
+  try {
+    const data = await MTA.refresh();
+    renderStations(MTA.stationsView(data));
+    syncVehicles(data.vehicles);
+  } catch(e) {
+    console.warn(e);
+    document.getElementById("updated").textContent = "error";
+  }
 }
 
 async function init() {
-  mapData = await (await fetch("/static/map_data.json")).json();
+  mapData = await (await fetch("map_data.json")).json();
   mapData.stopIndex = Object.fromEntries(mapData.stops.map(s => [s.id, s]));
   // Offset by COLOR (not per route): same-color routes share a slot and stack
   // into one line; different colors get different slots and fan out where they
@@ -643,8 +649,7 @@ async function init() {
   setupView("area-svg", AREA_ROI, 380, 380, { labels: false, stopLabels: true, lineScale: 1.9, stopR: 4, yourR: 12, trainR: 7, homeR: 17, pad: 20 });
   drawGrid();
   buildDebug();
-  await fetchStations();
-  await fetchVehicles();
+  await refreshLive();
 }
 
 // Redraw just the city map from the current CITY_OPTS/CITY_ROI (debug tuning).
@@ -701,8 +706,7 @@ function buildDebug() {
 }
 
 init();
-setInterval(fetchStations, 30000);
-setInterval(fetchVehicles, 30000);
+setInterval(refreshLive, 30000);
 setInterval(animateTrains, 50);
 </script>
 </body>
