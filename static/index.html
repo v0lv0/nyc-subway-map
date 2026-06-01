@@ -689,8 +689,10 @@ async function resolveLocation() {
 function resolveStations() {
   const q = new URLSearchParams(location.search);
   const raw = (q.get("stops") || DEFAULTS.stops.join(",")).trim();
+  // '+' joins a complex; URL-decoding may turn a literal '+' into a space, so
+  // split on either (%2B survives as '+', a raw '+' arrives as ' ').
   let groups = raw
-    ? raw.split(",").map(g => g.split("+").map(s => s.trim()).filter(Boolean)).filter(g => g.length)
+    ? raw.split(",").map(g => g.split(/[+\s]+/).map(s => s.trim()).filter(Boolean)).filter(g => g.length)
     : [];
   if (!groups.length) {
     groups = mapData.stops
