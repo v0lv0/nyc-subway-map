@@ -13,6 +13,15 @@
 // That keeps your address out of this repo AND off the URL bar; it lives only in
 // the browser you typed it into. Params override the saved value field by field.
 //
+// ON A TV, DON'T TYPE PARAMS AT ALL. Fire TV's Silk browser mangles '?' and '&'
+// (percent-encoding them into the path, which lands on a GitHub 404), and Pages
+// paths are case-sensitive so one auto-capitalised letter 404s too. Instead open
+// the bare site URL and press "Setup" — the on-screen form is D-pad navigable and
+// writes the same localStorage slot. 404.html also rescues a mangled URL, and
+// accepts a punctuation-free path form:
+//
+//   /nyc-subway-map/go/40.7074/-73.9464/L10-G29/M14/L13/G30
+//
 // Parsing is deliberately forgiving, because this URL gets typed on a TV remote:
 // param names are lowercased and whitespace-stripped ("st ops" still works), stop
 // ids are uppercased, and a complex can be joined with any of - _ + . | or a

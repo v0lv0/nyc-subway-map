@@ -86,6 +86,37 @@
   .boro-label { fill: #3a4854; font-weight: 700; text-anchor: middle; letter-spacing: 3px; }
   .stop-label { fill: #eaf2f7; font-size: 18px; font-weight: 600; letter-spacing: 0.3px;
                 paint-order: stroke; stroke: #0a1826; stroke-width: 3.5px; }
+  /* On-screen setup, driven by the TV remote's D-pad. Everything focusable is
+     big and shows a clear focus ring, because there is no mouse pointer. */
+  #setup { display: none; position: absolute; inset: 0; z-index: 20;
+           background: rgba(4, 10, 16, 0.94); padding: 40px 60px; overflow: auto; }
+  #setup.on { display: block; }
+  #setup h1 { font-size: 2rem; font-weight: 200; letter-spacing: 2px; margin-bottom: 6px; }
+  #setup .sub { color: #7f94a2; font-size: 0.95rem; margin-bottom: 26px; }
+  #setup label { display: block; color: #8aa0ad; font-size: 0.85rem;
+                 letter-spacing: 1.5px; text-transform: uppercase; margin: 18px 0 8px; }
+  #setup input { width: 620px; max-width: 100%; font-size: 1.3rem; padding: 14px 16px;
+                 border-radius: 10px; background: #0d1a26; color: #eaf2f7;
+                 border: 2px solid #24384a; font-family: inherit; }
+  #setup input:focus { outline: none; border-color: #6cbe45; }
+  .su-cols { display: flex; gap: 46px; align-items: flex-start; }
+  .su-btn { font-size: 1.05rem; padding: 12px 22px; border-radius: 10px; cursor: pointer;
+            background: #14384f; color: #eaf2f7; border: 2px solid #24384a; font-family: inherit; }
+  .su-btn:focus, .su-btn:hover { outline: none; border-color: #6cbe45; background: #1b4a68; }
+  .su-btn.primary { background: #1a3a1a; border-color: #2d5a2d; }
+  .su-btn.primary:focus, .su-btn.primary:hover { border-color: #6cbe45; background: #245024; }
+  #su-results, #su-chosen { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; width: 620px; }
+  .su-row { display: flex; align-items: center; gap: 12px; text-align: left;
+            font-size: 1.1rem; padding: 12px 16px; border-radius: 10px; cursor: pointer;
+            background: #0d1a26; color: #eaf2f7; border: 2px solid #1b2c38; font-family: inherit; }
+  .su-row:focus, .su-row:hover { outline: none; border-color: #6cbe45; }
+  .su-row .nm { flex: 1; }
+  .su-row .rm { color: #b98a4a; font-size: 0.85rem; }
+  .su-hint { color: #55697a; font-size: 0.9rem; margin-top: 8px; }
+  #su-actions { margin-top: 30px; display: flex; gap: 14px; align-items: center; }
+  #setup-open { font-size: 0.72rem; padding: 5px 12px; border-radius: 7px; cursor: pointer;
+                background: transparent; color: #55697a; border: 1px solid #1b2c38; font-family: inherit; }
+  #setup-open:focus, #setup-open:hover { outline: none; color: #eaf2f7; border-color: #6cbe45; }
   /* Config problems (bad stop id, failed geocode) — quiet, bottom-left */
   #notice { display: none; position: absolute; left: 28px; bottom: 22px; z-index: 6;
             max-width: 900px; font-size: 0.8rem; color: #b98a4a; letter-spacing: 0.4px; }
@@ -109,12 +140,39 @@
     <svg id="city-svg"></svg>
   </div>
   <div id="notice"></div>
+  <div id="setup">
+    <h1>Set up your dashboard</h1>
+    <div class="sub">Use the remote's arrows to move between fields, centre button to select. Saved on this TV — nothing is sent anywhere.</div>
+    <div class="su-cols">
+      <div>
+        <label for="su-home">Home — address, or latitude,longitude</label>
+        <input id="su-home" type="text" autocomplete="off" placeholder="e.g. 40.7074,-73.9464">
+        <div class="su-hint">Leave blank to centre the map on your stations instead.</div>
+        <label for="su-q">Find a station</label>
+        <input id="su-q" type="text" autocomplete="off" placeholder="type part of a name, e.g. lorimer">
+        <div id="su-results"></div>
+      </div>
+      <div>
+        <label>Your stations <span id="su-count" style="color:#55697a"></span></label>
+        <div id="su-chosen"></div>
+        <div class="su-hint">Stations within a couple of minutes' walk of each other are grouped into one card automatically.</div>
+      </div>
+    </div>
+    <div id="su-actions">
+      <button class="su-btn primary" id="su-save" type="button">Save &amp; show map</button>
+      <button class="su-btn" id="su-cancel" type="button">Cancel</button>
+      <button class="su-btn" id="su-clear" type="button">Clear saved settings</button>
+    </div>
+  </div>
   <div id="right">
     <div id="area-wrap" class="floatwin"><div class="map-label">Local stops</div><svg id="area-svg"></svg></div>
     <div id="bottom">
       <div id="bottom-head">
         <div id="address">—</div>
-        <div id="updated">--</div>
+        <div style="display:flex;gap:12px;align-items:center">
+          <button id="setup-open" type="button">Setup</button>
+          <div id="updated">--</div>
+        </div>
       </div>
       <div class="stations-panel" id="stations-panel"><div style="color:#222">loading...</div></div>
     </div>
@@ -777,9 +835,18 @@ async function resolveLocation(groups) {
 // returns the canonical group string for saveConfig().
 function buildStations(groups) {
   if (!groups.length) {
-    groups = mapData.stops
-      .map(s => [distM(HOME, s), s.id]).sort((a, b) => a[0] - b[0])
-      .slice(0, window.NUM_STATIONS || 4).map(x => [x[1]]);
+    // Nearest stations by walking distance, deduped by complex — otherwise a big
+    // interchange like Times Sq fills every card with the same station.
+    const seen = new Set();
+    const byDist = mapData.stops.map(s => [distM(HOME, s), s.id]).sort((a, b) => a[0] - b[0]);
+    for (const [, id] of byDist) {
+      const ids = complexFor(id);
+      const key = ids.slice().sort().join("+");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      groups.push(ids);
+      if (groups.length >= (window.NUM_STATIONS || 4)) break;
+    }
   }
   YOUR_STOP_IDS = []; YOUR_STOP_COLORS = {}; STATION_LABELS = {};
   const stations = [];
@@ -794,6 +861,124 @@ function buildStations(groups) {
   }
   window.STATIONS = stations;
   return groups.map(g => g.join("+")).join(",");
+}
+
+// --- On-screen setup --------------------------------------------------------
+// Typing ?params on a TV remote turned out to be unreliable: Fire TV's Silk
+// browser percent-encodes or swallows '?' and '&' (landing on a GitHub 404),
+// and Pages paths are case-sensitive so one auto-capitalised letter also 404s.
+// So the same config can be entered on screen with the D-pad and saved to the
+// exact same localStorage slot the URL params write to.
+let SU_CHOSEN = [];   // [{ label, ids: [stopId, ...] }]
+
+// A transfer complex = stops close enough to walk between (Lorimer St and
+// Metropolitan Av are one interchange under different names, so proximity is
+// the only signal available here — map_data.json carries no transfers table).
+// The picked stop leads the group, because buildStations() labels a card after
+// its first id — pick "Lorimer St" and the card should not say "Metropolitan Av".
+function complexFor(id) {
+  const s = mapData.stopIndex[id];
+  return [id, ...mapData.stops.filter(o => o.id !== id && distM(s, o) <= 180).map(o => o.id)];
+}
+
+// Rank against the home being typed right now, not the one already loaded — on a
+// first run HOME is still the neutral default, which would sort by the wrong city
+// corner. A lat,lon pair is usable immediately; an address only after saving.
+function suOrigin() {
+  const m = document.getElementById("su-home").value
+    .match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  return m ? { lat: +m[1], lon: +m[2] } : HOME;
+}
+
+// Nearest first: names like "Broadway" repeat all over the system, and on a TV the
+// right answer needs to be the first row, not somewhere down a list.
+function searchStations(q) {
+  q = q.trim().toLowerCase();
+  if (q.length < 2) return [];
+  const seen = new Set(), out = [];
+  const org = suOrigin();
+  const matches = mapData.stops
+    .filter(s => s.name.toLowerCase().includes(q))
+    .sort((a, b) => distM(org, a) - distM(org, b));
+  for (const s of matches) {
+    const ids = complexFor(s.id);
+    const key = ids.slice().sort().join("+");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ label: s.name, ids, lines: [...new Set(ids.flatMap(linesForStop))],
+               walk: walkMin(org, s) });
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
+function suRow(text, meta, onPick) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "su-row";
+  const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = text;
+  const mt = document.createElement("span"); mt.className = "rm"; mt.textContent = meta;
+  b.append(nm, mt);
+  b.onclick = onPick;
+  return b;
+}
+
+function renderChosen() {
+  const box = document.getElementById("su-chosen");
+  box.textContent = "";
+  document.getElementById("su-count").textContent = SU_CHOSEN.length ? `(${SU_CHOSEN.length})` : "(none yet)";
+  SU_CHOSEN.forEach((c, i) => {
+    box.appendChild(suRow(c.label, "remove", () => { SU_CHOSEN.splice(i, 1); renderChosen(); }));
+  });
+}
+
+function renderResults() {
+  const box = document.getElementById("su-results");
+  box.textContent = "";
+  for (const r of searchStations(document.getElementById("su-q").value)) {
+    const already = SU_CHOSEN.some(c => c.ids.slice().sort().join("+") === r.ids.slice().sort().join("+"));
+    const meta = already ? "added" : `${r.lines.join(" ")}  ·  ${r.walk} min walk`;
+    box.appendChild(suRow(r.label, meta, () => {
+      if (already) return;
+      SU_CHOSEN.push({ label: r.label, ids: r.ids });
+      renderChosen(); renderResults();
+    }));
+  }
+}
+
+// seed=true edits what's on screen now; first-run setup starts empty rather than
+// pre-filling with the neutral default's stations.
+function openSetup(seed = true) {
+  document.getElementById("su-home").value = seed ? (CONFIG.home || "") : "";
+  SU_CHOSEN = seed ? (window.STATIONS || []).map(s => ({ label: s.name, ids: s.stop_ids })) : [];
+  renderChosen(); renderResults();
+  document.getElementById("setup").classList.add("on");
+  document.getElementById("su-home").focus();
+}
+
+function closeSetup() { document.getElementById("setup").classList.remove("on"); }
+
+function wireSetup() {
+  document.getElementById("setup-open").onclick = openSetup;
+  document.getElementById("su-cancel").onclick = closeSetup;
+  document.getElementById("su-q").oninput = renderResults;
+  document.getElementById("su-home").oninput = renderResults;   // re-rank as home is typed
+  document.getElementById("su-clear").onclick = () => {
+    try { localStorage.removeItem(LS_KEY); } catch (e) {}
+    location.replace(location.pathname);
+  };
+  document.getElementById("su-save").onclick = () => {
+    const home = document.getElementById("su-home").value.trim();
+    const isLatLon = /^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/.test(home);
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        addr: isLatLon ? "" : home,       // an address doubles as the display label
+        home: home || null,
+        stops: SU_CHOSEN.map(c => c.ids.join("+")).join(",") || null,
+      }));
+    } catch (e) {}
+    // Land on the bare path so leftover URL params can't override what was saved.
+    location.replace(location.pathname);
+  };
 }
 
 async function init() {
@@ -817,13 +1002,20 @@ async function init() {
   resolveConfig();                              // URL params over last visit's saved config
   const groups = parseStopGroups(CONFIG.stops); // transfer complexes, validated
   await resolveLocation(groups);                // sets HOME + AREA_ROI
-  saveConfig(buildStations(groups));            // sets window.STATIONS, remembers the result
+  const canonical = buildStations(groups);      // sets window.STATIONS
+  // Nothing configured and nothing remembered: offer setup rather than silently
+  // showing a stranger's commute. Crucially, do NOT persist the neutral default —
+  // that would make the next visit look configured and hide setup forever.
+  const unconfigured = !CONFIG.home && !CONFIG.stops;
+  if (!unconfigured) saveConfig(canonical);
   showNotices();
+  wireSetup();
   initGrid();
   setupView("city-svg", CITY_ROI, 1920, 1080, CITY_OPTS);
   setupView("area-svg", AREA_ROI, 380, 380, { labels: false, stopLabels: true, lineScale: 1.9, stopR: 4, yourR: 12, trainR: 7, homeR: 17, pad: 20 });
   drawGrid();
   buildDebug();
+  if (unconfigured) openSetup(false);
   await refreshLive();
 }
 
@@ -875,8 +1067,11 @@ function buildDebug() {
   panel.append(reset, out);
   updateDebugReadout();
   window.addEventListener("keydown", e => {
-    if (e.key === "d" || e.key === "D") toggleGrid();
+    if (e.key === "Escape") closeSetup();
+    else if (document.getElementById("setup").classList.contains("on")) return;  // typing in the form
+    else if (e.key === "d" || e.key === "D") toggleGrid();
     else if (e.key === "p" || e.key === "P") togglePopup();
+    else if (e.key === "s" || e.key === "S") openSetup();
   });
 }
 

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NYC Subway — wrong address</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a1826; color: #eaf2f7; min-height: 100vh;
+         font-family: 'Helvetica Neue', Arial, sans-serif;
+         display: flex; align-items: center; justify-content: center; padding: 6vh 5vw; }
+  .card { max-width: 900px; }
+  h1 { font-size: 2.4rem; font-weight: 200; letter-spacing: 2px; margin-bottom: 18px; }
+  p { color: #8aa0ad; font-size: 1.15rem; line-height: 1.6; margin-bottom: 22px; }
+  code { color: #8fdcb0; }
+  a.go { display: inline-block; font-size: 1.5rem; padding: 18px 34px; border-radius: 12px;
+         background: #14384f; color: #eaf2f7; text-decoration: none; border: 2px solid #24384a; }
+  a.go:focus, a.go:hover { outline: none; border-color: #6cbe45; background: #1b4a68; }
+  #status { color: #b98a4a; font-size: 1.05rem; margin-bottom: 22px; min-height: 1.4em; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>That address didn't quite land</h1>
+    <div id="status"></div>
+    <p>
+      TV browsers often mangle a URL that contains <code>?</code> or <code>&amp;</code>, and
+      GitHub Pages addresses are case-sensitive — one capital letter is enough to miss.
+      Nothing needs typing: open the dashboard below and set it up on screen.
+    </p>
+    <a class="go" id="go" href="./" autofocus>Open the dashboard →</a>
+  </div>
+<script>
+// This page is GitHub Pages' fallback for any unknown path under the project.
+// Its job is to rescue a mistyped/mangled URL rather than dead-end on a 404:
+// if the config can be recovered from whatever arrived, stash it in localStorage
+// (same key and shape index.html reads) and bounce straight into the app.
+const LS_KEY = "nyc-subway-map:config";
+// Project sites live at /<repo>/, and this page can be served for any depth
+// beneath it, so derive the app root from the first path segment.
+const base = "/" + (location.pathname.split("/")[1] || "") + "/";
+document.getElementById("go").href = base;
+
+function save(home, stops, addr) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({ addr: addr || "", home: home || null, stops: stops || null }));
+    return true;
+  } catch (e) { return false; }
+}
+
+// Recover params from a URL whose '?' or '&' got percent-encoded or folded into
+// the path — decode the whole thing and look for the keys anywhere in it.
+function fromMangled(url) {
+  let s = url;
+  for (let i = 0; i < 2; i++) { try { s = decodeURIComponent(s); } catch (e) { break; } }
+  const grab = re => { const m = s.match(re); return m ? m[1].trim() : null; };
+  const home  = grab(/[?&\/](?:home|h)=([^?&#]+)/i);
+  const stops = grab(/[?&\/](?:stops|s)=([^?&#]+)/i);
+  const addr  = grab(/[?&\/](?:addr|a)=([^?&#]+)/i);
+  return (home || stops) ? { home, stops, addr } : null;
+}
+
+// Punctuation-free form, easy to type on a remote:
+//   /<repo>/go/40.7074/-73.9464/L10-G29/M14/L13/G30
+// Leading numeric pair is home (optional); the rest are station groups.
+function fromPath() {
+  const parts = location.pathname.split("/").filter(Boolean);
+  const i = parts.findIndex(p => p.toLowerCase() === "go");
+  if (i < 0) return null;
+  let rest = parts.slice(i + 1).map(decodeURIComponent);
+  let home = null;
+  const num = v => /^-?\d+(\.\d+)?$/.test(v);
+  if (rest.length >= 2 && num(rest[0]) && num(rest[1])) {
+    home = rest[0] + "," + rest[1];
+    rest = rest.slice(2);
+  }
+  const stops = rest.join(",").replace(/[\-_.|]+/g, "+") || null;
+  return (home || stops) ? { home, stops, addr: null } : null;
+}
+
+const found = fromPath() || fromMangled(location.href);
+if (found && save(found.home, found.stops, found.addr)) {
+  document.getElementById("status").textContent = "Recovered your settings — opening the dashboard…";
+  location.replace(base);
+} else {
+  document.getElementById("status").textContent =
+    "Couldn't read any settings from " + location.pathname;
+}
+</script>
+</body>
+</html>
