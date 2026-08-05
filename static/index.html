@@ -86,6 +86,9 @@
   .boro-label { fill: #3a4854; font-weight: 700; text-anchor: middle; letter-spacing: 3px; }
   .stop-label { fill: #eaf2f7; font-size: 18px; font-weight: 600; letter-spacing: 0.3px;
                 paint-order: stroke; stroke: #0a1826; stroke-width: 3.5px; }
+  /* Config problems (bad stop id, failed geocode) — quiet, bottom-left */
+  #notice { display: none; position: absolute; left: 28px; bottom: 22px; z-index: 6;
+            max-width: 900px; font-size: 0.8rem; color: #b98a4a; letter-spacing: 0.4px; }
   /* Debug tuning panel (press D to toggle) */
   #debug { display: none; position: fixed; top: 8px; right: 8px; width: 260px; max-height: 96vh; overflow: auto;
            z-index: 50; background: rgba(4,10,16,0.9); border: 1px solid #2a3f4f; border-radius: 8px;
@@ -105,6 +108,7 @@
     <div id="clock-date">NEW YORK CITY · LIVE</div>
     <svg id="city-svg"></svg>
   </div>
+  <div id="notice"></div>
   <div id="right">
     <div id="area-wrap" class="floatwin"><div class="map-label">Local stops</div><svg id="area-svg"></svg></div>
     <div id="bottom">
@@ -660,11 +664,88 @@ async function geocode(q) {
   return null;
 }
 
-// Resolve HOME + AREA_ROI from ?home=/?addr= (lat,lon pair or a geocoded address).
-async function resolveLocation() {
-  const q = new URLSearchParams(location.search);
-  let addr = q.get("addr") || "";
-  const home = q.get("home");
+// --- Config: URL params, tolerantly parsed, remembered across visits ---------
+// The dashboard runs on a TV where the URL has to be typed with a remote, so the
+// parser is deliberately forgiving and the result is saved: type the long URL
+// once, then the bare site URL restores it. ?reset forgets it again.
+const LS_KEY = "nyc-subway-map:config";
+let CONFIG = { addr: "", home: null, stops: null };
+const notices = [];
+
+function notice(msg) { notices.push(msg); }
+function showNotices() {
+  const el = document.getElementById("notice");
+  el.textContent = notices.join(" · ");
+  el.style.display = notices.length ? "block" : "none";
+}
+
+// Param names are lowercased and stripped of whitespace, so a fat-fingered
+// "st ops=" still lands on "stops". One-letter aliases keep the URL short:
+//   ?h=40.7074,-73.9464   ?s=L10+G29,M14,L13,G30   ?a=Label
+function readParams() {
+  const p = {};
+  for (const [k, v] of new URLSearchParams(location.search)) {
+    p[k.replace(/\s+/g, "").toLowerCase()] = v;
+  }
+  return {
+    home:  (p.home  || p.h || "").trim() || null,
+    addr:  (p.addr  || p.a || "").trim(),
+    stops: (p.stops || p.s || "").trim() || null,
+    reset: "reset" in p || "clear" in p,
+  };
+}
+
+// URL params win per field; anything omitted falls back to the last visit, so
+// ?s=... alone re-picks stations while keeping the saved home.
+function resolveConfig() {
+  const p = readParams();
+  if (p.reset) { try { localStorage.removeItem(LS_KEY); } catch (e) {} }
+  let saved = {};
+  if (!p.reset) {
+    try { saved = JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) {}
+  }
+  CONFIG = {
+    addr:  p.addr  || saved.addr  || "",
+    home:  p.home  || saved.home  || null,
+    stops: p.stops || saved.stops || null,
+  };
+}
+
+// Store the *resolved* values: home as a canonical "lat,lon" (no re-geocoding on
+// the next load) and stops as the canonical group string.
+function saveConfig(stops) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      addr: document.getElementById("address").textContent || "",
+      home: HOME ? `${HOME.lat.toFixed(5)},${HOME.lon.toFixed(5)}` : null,
+      stops: stops || null,
+    }));
+  } catch (e) { /* private browsing — params still work, just not remembered */ }
+}
+
+// Split "ID+ID,ID,..." into transfer-complex groups. '+' is the documented
+// joiner but URL-decoding turns a raw '+' into a space, and a TV keyboard makes
+// '+' awkward, so '-', '_', '.', '|' and spaces all work too; ';' also separates
+// groups. Unknown ids are reported rather than silently dropped.
+function parseStopGroups(raw) {
+  if (!raw) return [];
+  const groups = [];
+  for (const g of raw.split(/[,;]+/)) {
+    const ids = g.split(/[+\s\-_.|]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+    const valid = ids.filter(id => mapData.stopIndex[id]);
+    const bad = ids.filter(id => !mapData.stopIndex[id]);
+    if (bad.length) notice(`unknown stop ${bad.join(", ")}`);
+    if (valid.length) groups.push(valid);
+  }
+  return groups;
+}
+
+// Set HOME + AREA_ROI from CONFIG.home (a "lat,lon" pair or a geocoded address).
+// With no home given, fall back to the centre of the requested stops so that
+// ?s=... alone is a complete URL.
+async function resolveLocation(groups) {
+  let addr = CONFIG.addr;
+  const home = CONFIG.home;
   let lat = null, lon = null;
   const m = home && home.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
   if (m) {
@@ -674,6 +755,14 @@ async function resolveLocation() {
     const query = home || addr;
     const g = await geocode(query);
     if (g) { lat = g.lat; lon = g.lon; if (!addr) addr = query; }
+    else notice(`could not find "${query}"`);
+  }
+  if (lat == null && groups.length) {
+    const pts = groups.flat().map(id => mapData.stopIndex[id]);
+    lat = pts.reduce((a, s) => a + s.lat, 0) / pts.length;
+    lon = pts.reduce((a, s) => a + s.lon, 0) / pts.length;
+    addr = addr || mapData.stopIndex[groups[0][0]].name;
+    notice("no ?home given — centred on your stops, walk times approximate");
   }
   if (lat == null) { [lat, lon] = DEFAULTS.home; addr = addr || DEFAULTS.addr; }
   HOME = { lat, lon };
@@ -683,17 +772,10 @@ async function resolveLocation() {
   document.getElementById("address").textContent = addr;
 }
 
-// Resolve station cards from ?stops=ID+ID,ID,... ('+' groups a transfer complex),
-// or auto-pick the nearest NUM_STATIONS to home. Populates window.STATIONS (for
-// the timetable) plus the area-map highlight/label globals.
-function resolveStations() {
-  const q = new URLSearchParams(location.search);
-  const raw = (q.get("stops") || DEFAULTS.stops.join(",")).trim();
-  // '+' joins a complex; URL-decoding may turn a literal '+' into a space, so
-  // split on either (%2B survives as '+', a raw '+' arrives as ' ').
-  let groups = raw
-    ? raw.split(",").map(g => g.split(/[+\s]+/).map(s => s.trim()).filter(Boolean)).filter(g => g.length)
-    : [];
+// Build the station cards from the resolved groups (needs HOME for walk times).
+// Populates window.STATIONS plus the area-map highlight/label globals, and
+// returns the canonical group string for saveConfig().
+function buildStations(groups) {
   if (!groups.length) {
     groups = mapData.stops
       .map(s => [distM(HOME, s), s.id]).sort((a, b) => a[0] - b[0])
@@ -701,9 +783,7 @@ function resolveStations() {
   }
   YOUR_STOP_IDS = []; YOUR_STOP_COLORS = {}; STATION_LABELS = {};
   const stations = [];
-  for (const ids of groups) {
-    const valid = ids.filter(id => mapData.stopIndex[id]);
-    if (!valid.length) continue;
+  for (const valid of groups) {
     const lines = [...new Set(valid.flatMap(linesForStop))];
     const color = lines.length ? (mapData.route_colors[lines[0]] || "#fff") : "#fff";
     const walk = Math.min(...valid.map(id => walkMin(HOME, mapData.stopIndex[id])));
@@ -713,6 +793,7 @@ function resolveStations() {
     stations.push({ name, lines, walk_min: walk, stop_ids: valid });
   }
   window.STATIONS = stations;
+  return groups.map(g => g.join("+")).join(",");
 }
 
 async function init() {
@@ -733,8 +814,11 @@ async function init() {
       if (!STOP_ON_LINE[sid]) STOP_ON_LINE[sid] = { route: routeId, s: rp.stopT[sid] };
     }
   }
-  await resolveLocation();   // sets HOME + AREA_ROI from URL params
-  resolveStations();         // sets window.STATIONS + area-map highlight globals
+  resolveConfig();                              // URL params over last visit's saved config
+  const groups = parseStopGroups(CONFIG.stops); // transfer complexes, validated
+  await resolveLocation(groups);                // sets HOME + AREA_ROI
+  saveConfig(buildStations(groups));            // sets window.STATIONS, remembers the result
+  showNotices();
   initGrid();
   setupView("city-svg", CITY_ROI, 1920, 1080, CITY_OPTS);
   setupView("area-svg", AREA_ROI, 380, 380, { labels: false, stopLabels: true, lineScale: 1.9, stopR: 4, yourR: 12, trainR: 7, homeR: 17, pad: 20 });
